@@ -457,6 +457,21 @@ public final class FloatingPillWindowController: NSObject {
         pv.onDismiss = { [weak self] in
             self?.retract(immediately: false)
         }
+        pv.onHoverStateChanged = { [weak self] isHovered in
+            guard let self = self else { return }
+            if isHovered {
+                self.retractTimer?.invalidate()
+                self.retractTimer = nil
+                self.isHoveringActive = true
+            } else {
+                self.isHoveringActive = false
+                if self.retractTimer == nil && self.isDroppedDown && self.hoverDropOnly {
+                    self.retractTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+                        self?.retract()
+                    }
+                }
+            }
+        }
         
         panel.contentView = pv
         self.pillView = pv
@@ -471,6 +486,9 @@ public final class FloatingPillWindowController: NSObject {
         let fittingSize = pv.calculateFittingSize()
         panel.setContentSize(fittingSize)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
+        if isDroppedDown {
+            repositionPanel()
+        }
     }
     
     public func dropDown() {
@@ -488,62 +506,45 @@ public final class FloatingPillWindowController: NSObject {
         // Anchored flush to the right edge of the display
         let targetX = screenFrame.maxX - fittingSize.width
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
-        let hiddenX = screenFrame.maxX
         
         let wasDropped = isDroppedDown
         isDroppedDown = true
         isPillVisibleInternal = true
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
         
-        if !wasDropped {
-            panel.setFrameOrigin(NSPoint(x: hiddenX, y: targetY))
-            panel.alphaValue = 0.2
-        }
-        
+        // Window itself is always kept in-bounds right on the screen edge
+        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+        panel.alphaValue = 1.0
         panel.orderFront(nil)
         
-        // Smooth stretch-out animation from the right bezel
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.28
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
-            panel.animator().setFrameOrigin(NSPoint(x: targetX, y: targetY))
-            panel.animator().alphaValue = 1.0
+        // Trigger smooth stretch-out animation from the right bezel
+        if !wasDropped || !pv.isStretchedOut {
+            pv.stretchOut(animated: true)
         }
     }
     
     public func retract(immediately: Bool = false) {
-        guard let panel = pillPanel, isDroppedDown || panel.isVisible else { return }
+        guard let panel = pillPanel, let pv = pillView, isDroppedDown || panel.isVisible else { return }
         isDroppedDown = false
         isPillVisibleInternal = false
         cachedPillRect = .zero
         retractTimer?.invalidate()
         retractTimer = nil
         
-        guard let screen = NSScreen.main else {
-            panel.orderOut(nil)
-            return
-        }
-        let hiddenX = screen.frame.maxX
-        let currentY = panel.frame.origin.y
-        
         if immediately {
-            panel.alphaValue = 0.0
-            panel.setFrameOrigin(NSPoint(x: hiddenX, y: currentY))
-            panel.orderOut(nil)
+            pv.slideIn(animated: false) {
+                panel.orderOut(nil)
+            }
             return
         }
         
-        // Slide smoothly back into the right edge
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().setFrameOrigin(NSPoint(x: hiddenX, y: currentY))
-            panel.animator().alphaValue = 0.0
-        }, completionHandler: {
+        // Slide smoothly back into the right bezel
+        pv.slideIn(animated: true) { [weak self, weak panel] in
+            guard let self = self, let panel = panel else { return }
             if !self.isDroppedDown {
                 panel.orderOut(nil)
             }
-        })
+        }
     }
     
     private func repositionPanel() {

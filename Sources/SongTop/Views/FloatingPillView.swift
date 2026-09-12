@@ -1,6 +1,7 @@
 import AppKit
 
 public final class FloatingPillView: NSView {
+    private let clipContainer = NSView()
     private let visualEffectView = NSVisualEffectView()
     private let badgeContainer = NSView()
     private let equalizerView = EqualizerView(barColor: .white)
@@ -14,6 +15,7 @@ public final class FloatingPillView: NSView {
     private let closeButton = NSButton()
     
     private var trackingArea: NSTrackingArea?
+    public private(set) var isStretchedOut: Bool = false
     
     public var onOpenTab: (() -> Void)?
     public var onCopyTitle: (() -> Void)?
@@ -36,6 +38,11 @@ public final class FloatingPillView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         
+        // Clip container masks the drawer sliding in from the right edge
+        clipContainer.wantsLayer = true
+        clipContainer.layer?.masksToBounds = true
+        addSubview(clipContainer)
+        
         // Background Frosted Glass
         visualEffectView.material = .hudWindow
         visualEffectView.blendingMode = .behindWindow
@@ -48,7 +55,7 @@ public final class FloatingPillView: NSView {
         visualEffectView.layer?.borderWidth = 1.2
         visualEffectView.layer?.borderColor = NSColor(white: 1.0, alpha: 0.22).cgColor
         visualEffectView.appearance = NSAppearance(named: .darkAqua)
-        addSubview(visualEffectView)
+        clipContainer.addSubview(visualEffectView)
         
         // Left Edge Drawer Accent Grip Bar
         let gripBar = NSView()
@@ -196,7 +203,13 @@ public final class FloatingPillView: NSView {
     
     public override func layout() {
         super.layout()
-        visualEffectView.frame = bounds
+        clipContainer.frame = bounds
+        
+        if isStretchedOut {
+            visualEffectView.frame = bounds
+        } else {
+            visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+        }
         
         // Left grip bar
         if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
@@ -238,6 +251,34 @@ public final class FloatingPillView: NSView {
         }
         
         artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 18, width: availableWidth, height: 16)
+    }
+    
+    public func stretchOut(animated: Bool = true) {
+        isStretchedOut = true
+        if !animated {
+            visualEffectView.frame = bounds
+            return
+        }
+        visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.28
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
+            visualEffectView.animator().frame = bounds
+        }
+    }
+    
+    public func slideIn(animated: Bool = true, completion: (() -> Void)? = nil) {
+        isStretchedOut = false
+        if !animated {
+            visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+            completion?()
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            visualEffectView.animator().frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+        }, completionHandler: completion)
     }
     
     public func calculateFittingSize() -> NSSize {
