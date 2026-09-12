@@ -156,6 +156,7 @@ public final class FloatingPillView: NSView {
     private func setupViews() {
         wantsLayer = true
         layer?.masksToBounds = false
+        layer?.backgroundColor = NSColor.clear.cgColor
         
         NotificationCenter.default.addObserver(
             self,
@@ -166,6 +167,9 @@ public final class FloatingPillView: NSView {
         
         // Clip container masks the drawer sliding in from the right edge
         clipContainer.wantsLayer = true
+        clipContainer.layer?.backgroundColor = NSColor.clear.cgColor
+        clipContainer.layer?.cornerRadius = 18
+        clipContainer.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         clipContainer.layer?.masksToBounds = true
         addSubview(clipContainer)
         
