@@ -424,9 +424,9 @@ public final class YouTubeDetector: ObservableObject {
                     let vol = dict["vol"] as? Int ?? 100
                     let muted = dict["muted"] as? Bool ?? false
                     
-                    // Compensate for AppleScript query latency if browser playback is active
-                    if !paused && latency > 0 && latency < 0.5 {
-                        cur += latency
+                    // Compensate for full round-trip AppleScript and WebKit dispatch latency
+                    if !paused && latency > 0 && latency < 0.8 {
+                        cur += (latency + 0.05)
                     }
                     
                     self.tabCurrentTime = cur

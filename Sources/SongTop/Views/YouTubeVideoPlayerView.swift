@@ -86,6 +86,18 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
     public private(set) var volume: Int = 100
     private var shouldBePlaying: Bool = true
     
+    /// Constant audio/video lip-sync delay (in seconds) to compensate for speaker/Bluetooth latency. Default 0.0s (exact frame match).
+    public var syncDelay: Double = {
+        if let stored = UserDefaults.standard.object(forKey: "songtop_av_sync_delay_ms") as? Double, stored == 250.0 {
+            UserDefaults.standard.set(0.0, forKey: "songtop_av_sync_delay_ms")
+            return 0.0
+        }
+        let ms = UserDefaults.standard.object(forKey: "songtop_av_sync_delay_ms") != nil
+            ? UserDefaults.standard.double(forKey: "songtop_av_sync_delay_ms")
+            : 0.0
+        return ms / 1000.0
+    }()
+    
     public var currentTime: Double {
         return browserCurrentTime > 0 ? browserCurrentTime : panelCurrentTime
     }
@@ -215,9 +227,11 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
             var lastAdState = false;
             var lastPlayState = null;
             var readyNotified = false;
+            var lastSeekTimestamp = 0;
+            window._songTopInitialSynced = false;
 
-            // Closed-loop dynamic playback rate drift synchronizer
-            window._songTopSync = function(targetTime, isPaused) {
+            // Closed-loop dynamic frame synchronizer with seek debouncing and jitter damping
+            window._songTopSync = function(targetTime, isPaused, delaySec) {
                 if (typeof targetTime !== 'number' || !isFinite(targetTime) || targetTime < 0) return;
                 var p = document.getElementById('movie_player');
                 var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
@@ -228,6 +242,9 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     return;
                 }
 
+                var delay = (typeof delaySec === 'number' && isFinite(delaySec)) ? delaySec : 0.0;
+                var effectiveTarget = Math.max(0, targetTime - delay);
+
                 if (isPaused) {
                     if (!v.paused) {
                         try { v.pause(); } catch(e) {}
@@ -235,9 +252,9 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     if (p && p.pauseVideo) {
                         try { p.pauseVideo(); } catch(e) {}
                     }
-                    // When paused, align frame if off by more than 100ms
-                    if (Math.abs(v.currentTime - targetTime) > 0.10) {
-                        v.currentTime = targetTime;
+                    // When paused, snap frame if off by more than 80ms
+                    if (Math.abs(v.currentTime - effectiveTarget) > 0.08) {
+                        v.currentTime = effectiveTarget;
                     }
                     v.playbackRate = 1.0;
                     return;
@@ -251,37 +268,45 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     try { p.playVideo(); } catch(e) {}
                 }
 
-                var diff = v.currentTime - targetTime; // positive: panel video is ahead; negative: panel video is behind
+                var diff = v.currentTime - effectiveTarget; // positive: panel video is ahead; negative: panel video is behind
+                var now = Date.now();
 
-                // 1. Large jump (> 1.2s): hard seek to snap instantly
-                if (Math.abs(diff) > 1.2) {
+                // 1. Initial sync or major jump (> 1.2s, e.g. user scrubbed in browser)
+                if (!window._songTopInitialSynced || Math.abs(diff) > 1.2) {
+                    window._songTopInitialSynced = true;
+                    lastSeekTimestamp = now;
                     if (p && p.seekTo) {
-                        try { p.seekTo(targetTime, true); } catch(e) {}
+                        try { p.seekTo(effectiveTarget, true); } catch(e) {}
                     }
-                    v.currentTime = targetTime;
+                    v.currentTime = effectiveTarget;
                     v.playbackRate = 1.0;
                     return;
                 }
 
-                // 2. Smooth drift compensation via playbackRate (no seeking stutter)
-                // Video is ahead of audio (diff > 0): slow down
-                if (diff > 0.40) {
-                    v.playbackRate = 0.75;
-                } else if (diff > 0.18) {
-                    v.playbackRate = 0.88;
-                } else if (diff > 0.05) {
-                    v.playbackRate = 0.95;
+                // 2. Prevent seek thrashing! Keep at least 2.5s between hard seeks so playback is silky smooth
+                if (now - lastSeekTimestamp < 2500) {
+                    return;
                 }
-                // Video is behind audio (diff < 0): speed up
-                else if (diff < -0.40) {
-                    v.playbackRate = 1.25;
-                } else if (diff < -0.18) {
-                    v.playbackRate = 1.12;
-                } else if (diff < -0.05) {
-                    v.playbackRate = 1.05;
+
+                // 3. Significant drift (> 0.45s): snap frame cleanly
+                if (Math.abs(diff) > 0.45) {
+                    lastSeekTimestamp = now;
+                    if (p && p.seekTo) {
+                        try { p.seekTo(effectiveTarget, true); } catch(e) {}
+                    }
+                    v.currentTime = effectiveTarget;
+                    v.playbackRate = 1.0;
+                    return;
                 }
-                // Within ±0.05s (50ms): in tight lip-sync!
-                else {
+
+                // 4. Subtle, imperceptible rate convergence (±4%)
+                // Micro-adjusting by 4% is invisible to human eye, perfectly eliminates small drift,
+                // and NEVER triggers YouTube buffer re-requests or stuttering
+                if (diff < -0.06) {
+                    v.playbackRate = 1.04;
+                } else if (diff > 0.06) {
+                    v.playbackRate = 0.96;
+                } else {
                     v.playbackRate = 1.0;
                 }
             };
@@ -329,6 +354,13 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                 } else if (v) {
                     if (!readyNotified && (v.readyState >= 1 || (p && p.getPlayerState))) {
                         readyNotified = true;
+                        try {
+                            if (p && p.setPlaybackQualityRange) {
+                                p.setPlaybackQualityRange('small', 'medium');
+                            } else if (p && p.setPlaybackQuality) {
+                                p.setPlaybackQuality('medium');
+                            }
+                        } catch(e) {}
                         try { window.webkit.messageHandlers.playerBridge.postMessage('ready'); } catch(e) {}
                     }
 
@@ -461,9 +493,10 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
             return
         }
         
-        let startVal = max(0.0, startSeconds)
-        browserCurrentTime = startVal
-        panelCurrentTime = startVal
+        browserCurrentTime = max(0.0, startSeconds)
+        let effectiveStart = max(0.0, startSeconds - syncDelay)
+        let startVal = effectiveStart
+        panelCurrentTime = effectiveStart
         
         if currentVideoId == id {
             if isReady && !isAdActive {
@@ -499,6 +532,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                 p.loadVideoById({ videoId: '\(id)', startSeconds: \(startVal) });
                 p.mute();
                 p.playVideo();
+                window._songTopInitialSynced = false;
                 return true;
             }
             return false;
@@ -581,12 +615,13 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
         let js = """
         (function() {
             if (typeof window._songTopSync === 'function') {
-                window._songTopSync(\(targetTime), \(isPaused));
+                window._songTopSync(\(targetTime), \(isPaused), \(syncDelay));
             } else {
+                var effective = Math.max(0, \(targetTime) - \(syncDelay));
                 var p = document.getElementById('movie_player');
                 var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
-                if (v && Math.abs(v.currentTime - \(targetTime)) > 1.0) {
-                    v.currentTime = \(targetTime);
+                if (v && Math.abs(v.currentTime - effective) > 1.0) {
+                    v.currentTime = effective;
                 }
             }
         })();
@@ -637,20 +672,20 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
     
     public func seekTo(seconds: Double) {
         browserCurrentTime = max(0, min(duration > 0 ? duration : 36000, seconds))
-        panelCurrentTime = browserCurrentTime
         syncSeekTo(browserCurrentTime)
         onProgressUpdated?(browserCurrentTime, duration)
     }
     
     public func syncSeekTo(_ seconds: Double) {
-        panelCurrentTime = seconds
+        let effective = max(0.0, seconds - syncDelay)
+        panelCurrentTime = effective
         let js = """
         (function() {
             var p = document.getElementById('movie_player');
-            if (p && p.seekTo) { p.seekTo(\(seconds), true); }
+            if (p && p.seekTo) { p.seekTo(\(effective), true); }
             var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
             if (v) {
-                v.currentTime = \(seconds);
+                v.currentTime = \(effective);
                 v.playbackRate = 1.0;
             }
         })();

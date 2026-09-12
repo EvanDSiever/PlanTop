@@ -179,6 +179,53 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Audio / Video Lip-Sync Calibration Submenu
+        let syncSubmenu = NSMenu()
+        var currentMs = UserDefaults.standard.object(forKey: "songtop_av_sync_delay_ms") != nil
+            ? UserDefaults.standard.double(forKey: "songtop_av_sync_delay_ms")
+            : 0.0
+        if currentMs == 250.0 {
+            currentMs = 0.0
+            UserDefaults.standard.set(0.0, forKey: "songtop_av_sync_delay_ms")
+        }
+        let formattedCur = currentMs > 0 ? "+\(Int(currentMs)) ms" : "\(Int(currentMs)) ms"
+        
+        let currentItem = NSMenuItem(title: "Active Calibration: \(formattedCur)", action: nil, keyEquivalent: "")
+        currentItem.isEnabled = false
+        syncSubmenu.addItem(currentItem)
+        syncSubmenu.addItem(NSMenuItem.separator())
+        
+        let presets: [(label: String, value: Double)] = [
+            ("-250 ms (Ideal / Advance Video)", -250),
+            ("-120 ms (Fast Audio)", -120),
+            ("-80 ms (Video Lags)", -80),
+            ("0 ms (Exact Match)", 0),
+            ("+80 ms (Video Leads)", 80),
+            ("+180 ms (Bluetooth Audio)", 180)
+        ]
+        
+        for p in presets {
+            let item = NSMenuItem(title: p.label, action: #selector(menuBarSyncPresetSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = p.value
+            if abs(currentMs - p.value) < 5 {
+                item.state = .on
+            }
+            syncSubmenu.addItem(item)
+        }
+        
+        syncSubmenu.addItem(NSMenuItem.separator())
+        let calibrateItem = NSMenuItem(title: "Fine-Tune in Settings...", action: #selector(openSettingsClicked), keyEquivalent: "")
+        calibrateItem.target = self
+        syncSubmenu.addItem(calibrateItem)
+        
+        let syncMenuItem = NSMenuItem(title: "Lip-Sync Calibration (\(formattedCur))", action: nil, keyEquivalent: "")
+        syncMenuItem.submenu = syncSubmenu
+        syncMenuItem.image = NSImage(systemSymbolName: "slider.horizontal.below.rectangle", accessibilityDescription: nil)
+        menu.addItem(syncMenuItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
         // Settings / Preferences
         let dropDownItem = NSMenuItem(
             title: "Slide Out on Right Edge Hover",
@@ -329,6 +376,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     @objc private func openSettingsClicked() {
         onOpenSettings?()
+    }
+    
+    @objc private func menuBarSyncPresetSelected(_ sender: NSMenuItem) {
+        guard let ms = sender.representedObject as? Double else { return }
+        UserDefaults.standard.set(ms, forKey: "songtop_av_sync_delay_ms")
+        NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
     }
     
     @objc private func quitClicked() {

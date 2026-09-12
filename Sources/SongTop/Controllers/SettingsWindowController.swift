@@ -37,6 +37,15 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let panelWidthSlider = NSSlider(value: 340, minValue: 260, maxValue: 650, target: nil, action: nil)
     private let panelWidthValueLabel = NSTextField(labelWithString: "340 px")
     
+    // A/V Lip-Sync Calibration Controls
+    private let syncDelaySlider = NSSlider(value: 0, minValue: -400, maxValue: 400, target: nil, action: nil)
+    private let syncDelayValueLabel = NSTextField(labelWithString: "0 ms")
+    private let presetMinus250Button = NSButton()
+    private let presetZeroButton = NSButton()
+    private let presetAdvanceButton = NSButton()
+    private let presetDelayButton = NSButton()
+    private let presetBluetoothButton = NSButton()
+    
     // Auto Peek Controls
     private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically stretch out when a new song starts", target: nil, action: nil)
     private let peekDurationSlider = NSSlider(value: 5.0, minValue: 2.0, maxValue: 10.0, target: nil, action: nil)
@@ -129,7 +138,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         visualEffect.addSubview(scrollView)
         self.settingsScrollView = scrollView
         
-        let container = FlippedSettingsContainer(frame: NSRect(x: 0, y: 0, width: 520, height: 950))
+        let container = FlippedSettingsContainer(frame: NSRect(x: 0, y: 0, width: 520, height: 1150))
         scrollView.documentView = container
         
         var currentY: CGFloat = 20
@@ -391,7 +400,59 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY += 304 + 14
         
-        // 7. Menu Bar Options Card
+        // 7. Audio / Video Lip-Sync Calibration Card
+        let syncCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 118))
+        container.addSubview(syncCard)
+        
+        let syncTitle = NSTextField(labelWithString: "Audio / Video Lip-Sync Calibration")
+        syncTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        syncTitle.frame = NSRect(x: 14, y: 90, width: 300, height: 16)
+        syncCard.addSubview(syncTitle)
+        
+        let delayLabel = NSTextField(labelWithString: "Panel Offset:")
+        delayLabel.font = NSFont.systemFont(ofSize: 11)
+        delayLabel.frame = NSRect(x: 14, y: 64, width: 85, height: 16)
+        syncCard.addSubview(delayLabel)
+        
+        syncDelaySlider.isContinuous = true
+        syncDelaySlider.frame = NSRect(x: 105, y: 62, width: 290, height: 20)
+        syncDelaySlider.target = self
+        syncDelaySlider.action = #selector(syncDelaySliderChanged)
+        syncCard.addSubview(syncDelaySlider)
+        
+        syncDelayValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        syncDelayValueLabel.alignment = .right
+        syncDelayValueLabel.frame = NSRect(x: 400, y: 64, width: 65, height: 16)
+        syncCard.addSubview(syncDelayValueLabel)
+        
+        // Presets Stack
+        let presetsStack = NSStackView()
+        presetsStack.orientation = .horizontal
+        presetsStack.spacing = 6
+        presetsStack.frame = NSRect(x: 14, y: 32, width: 452, height: 22)
+        
+        configurePresetButton(presetMinus250Button, title: "-250 ms (Ideal)", action: #selector(presetMinus250Clicked))
+        configurePresetButton(presetAdvanceButton, title: "-80 ms", action: #selector(presetAdvanceClicked))
+        configurePresetButton(presetZeroButton, title: "0 ms (Exact)", action: #selector(presetZeroClicked))
+        configurePresetButton(presetDelayButton, title: "+80 ms", action: #selector(presetDelayClicked))
+        configurePresetButton(presetBluetoothButton, title: "+180 ms (BT)", action: #selector(presetBluetoothClicked))
+        
+        presetsStack.addArrangedSubview(presetMinus250Button)
+        presetsStack.addArrangedSubview(presetAdvanceButton)
+        presetsStack.addArrangedSubview(presetZeroButton)
+        presetsStack.addArrangedSubview(presetDelayButton)
+        presetsStack.addArrangedSubview(presetBluetoothButton)
+        syncCard.addSubview(presetsStack)
+        
+        let syncTip = NSTextField(labelWithString: "💡 0 ms locks exact frames with YouTube. Negative pulls video forward; positive delays video.")
+        syncTip.font = NSFont.systemFont(ofSize: 10)
+        syncTip.textColor = .secondaryLabelColor
+        syncTip.frame = NSRect(x: 14, y: 10, width: 450, height: 14)
+        syncCard.addSubview(syncTip)
+        
+        currentY += 118 + 14
+        
+        // 8. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 54))
         container.addSubview(menuCard)
         
@@ -402,7 +463,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY += 54 + 14
         
-        // 8. Browser Status Card
+        // 9. Browser Status Card
         let browserCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 58))
         container.addSubview(browserCard)
         
@@ -494,6 +555,16 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         panelWidthSlider.doubleValue = Double(pillController.customPanelWidth)
         panelWidthValueLabel.stringValue = "\(Int(pillController.customPanelWidth)) px"
+        
+        var delayMs = UserDefaults.standard.object(forKey: "songtop_av_sync_delay_ms") != nil
+            ? UserDefaults.standard.double(forKey: "songtop_av_sync_delay_ms")
+            : 0.0
+        if delayMs == 250.0 {
+            delayMs = 0.0
+            UserDefaults.standard.set(0.0, forKey: "songtop_av_sync_delay_ms")
+        }
+        syncDelaySlider.doubleValue = delayMs
+        syncDelayValueLabel.stringValue = formatDelayMs(delayMs)
         
         autoPeekCheckbox.state = pillController.autoPeekEnabled ? .on : .off
         peekDurationSlider.doubleValue = pillController.peekDuration
@@ -609,5 +680,56 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 alert.runModal()
             }
         }
+    }
+    
+    private func configurePresetButton(_ button: NSButton, title: String, action: Selector) {
+        button.title = title
+        button.bezelStyle = .rounded
+        button.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        button.target = self
+        button.action = action
+    }
+    
+    private func formatDelayMs(_ ms: Double) -> String {
+        let rounded = Int(round(ms))
+        if rounded > 0 {
+            return "+\(rounded) ms"
+        } else {
+            return "\(rounded) ms"
+        }
+    }
+    
+    @objc private func syncDelaySliderChanged() {
+        let val = round(syncDelaySlider.doubleValue / 10.0) * 10.0
+        syncDelayValueLabel.stringValue = formatDelayMs(val)
+        UserDefaults.standard.set(val, forKey: "songtop_av_sync_delay_ms")
+        NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+    }
+    
+    @objc private func presetMinus250Clicked() {
+        applySyncDelayPreset(-250)
+    }
+    
+    @objc private func presetZeroClicked() {
+        applySyncDelayPreset(0)
+    }
+    
+    @objc private func presetAdvanceClicked() {
+        applySyncDelayPreset(-80)
+    }
+    
+    @objc private func presetDelayClicked() {
+        applySyncDelayPreset(80)
+    }
+    
+    @objc private func presetBluetoothClicked() {
+        applySyncDelayPreset(180)
+    }
+    
+    private func applySyncDelayPreset(_ ms: Double) {
+        syncDelaySlider.doubleValue = ms
+        syncDelayValueLabel.stringValue = formatDelayMs(ms)
+        UserDefaults.standard.set(ms, forKey: "songtop_av_sync_delay_ms")
+        NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
     }
 }

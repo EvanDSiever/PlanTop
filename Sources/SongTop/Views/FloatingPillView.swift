@@ -72,6 +72,28 @@ public final class FloatingPillView: NSView {
     }
     public var onTogglePin: (() -> Void)?
     
+    // Audio / Video Lip-Sync Calibration Extension
+    private let syncCalibrationButton = NSButton()
+    public var isSyncCalibrationExpanded: Bool = false {
+        didSet {
+            updateSyncCalibrationButtonIcon()
+            syncDrawerContainer.isHidden = !isSyncCalibrationExpanded
+            needsLayout = true
+            onHeightChanged?()
+        }
+    }
+    public var onHeightChanged: (() -> Void)?
+    
+    // In-Panel Lip-Sync Calibration Drawer Controls
+    private let syncDrawerContainer = NSView()
+    private let syncDrawerTitleLabel = NSTextField(labelWithString: "Lip-Sync:")
+    private let syncDrawerValueLabel = NSTextField(labelWithString: "0 ms")
+    private let syncDrawerSlider = NSSlider(value: 0, minValue: -400, maxValue: 300, target: nil, action: nil)
+    private let presetMinus250Button = NSButton()
+    private let presetMinus120Button = NSButton()
+    private let presetZeroButton = NSButton()
+    private let presetPlus100Button = NSButton()
+    
     private let titleLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
     private let browserBadge = NSTextField(labelWithString: "")
@@ -122,9 +144,20 @@ public final class FloatingPillView: NSView {
         setupViews()
     }
     
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
     private func setupViews() {
         wantsLayer = true
         layer?.masksToBounds = false
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSettingsChanged),
+            name: .songTopSettingsChanged,
+            object: nil
+        )
         
         // Clip container masks the drawer sliding in from the right edge
         clipContainer.wantsLayer = true
@@ -330,6 +363,46 @@ public final class FloatingPillView: NSView {
         closeButton.target = self
         closeButton.action = #selector(handleClose)
         visualEffectView.addSubview(closeButton)
+        
+        // Sync Calibration Arrow Button
+        configureIconButton(syncCalibrationButton, symbol: "chevron.down", tooltip: "Audio / Video Lip-Sync Calibration")
+        syncCalibrationButton.target = self
+        syncCalibrationButton.action = #selector(handleToggleSyncCalibration)
+        visualEffectView.addSubview(syncCalibrationButton)
+        
+        // In-Panel Lip-Sync Calibration Drawer
+        syncDrawerContainer.wantsLayer = true
+        syncDrawerContainer.layer?.backgroundColor = NSColor(red: 0.10, green: 0.10, blue: 0.13, alpha: 0.90).cgColor
+        syncDrawerContainer.layer?.cornerRadius = 9
+        syncDrawerContainer.layer?.borderWidth = 1.0
+        syncDrawerContainer.layer?.borderColor = NSColor(white: 1.0, alpha: 0.16).cgColor
+        syncDrawerContainer.isHidden = true
+        visualEffectView.addSubview(syncDrawerContainer)
+        
+        syncDrawerTitleLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+        syncDrawerTitleLabel.textColor = .secondaryLabelColor
+        syncDrawerContainer.addSubview(syncDrawerTitleLabel)
+        
+        syncDrawerValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .bold)
+        syncDrawerValueLabel.textColor = .labelColor
+        syncDrawerContainer.addSubview(syncDrawerValueLabel)
+        
+        syncDrawerSlider.isContinuous = true
+        syncDrawerSlider.target = self
+        syncDrawerSlider.action = #selector(handleDrawerSliderChanged)
+        syncDrawerContainer.addSubview(syncDrawerSlider)
+        
+        configureDrawerPresetButton(presetMinus250Button, title: "-250ms", action: #selector(handlePresetMinus250))
+        configureDrawerPresetButton(presetMinus120Button, title: "-120ms", action: #selector(handlePresetMinus120))
+        configureDrawerPresetButton(presetZeroButton, title: "0ms", action: #selector(handlePresetZero))
+        configureDrawerPresetButton(presetPlus100Button, title: "+100ms", action: #selector(handlePresetPlus100))
+        
+        syncDrawerContainer.addSubview(presetMinus250Button)
+        syncDrawerContainer.addSubview(presetMinus120Button)
+        syncDrawerContainer.addSubview(presetZeroButton)
+        syncDrawerContainer.addSubview(presetPlus100Button)
+        
+        loadInitialSyncDelay()
     }
     
     // Left Edge Drag-Resize Cursor Support
@@ -549,15 +622,19 @@ public final class FloatingPillView: NSView {
             skipForwardButton.frame = NSRect(x: playPauseButton.frame.maxX + spacing, y: transY, width: btnSize, height: btnSize)
             
             volumeButton.frame = NSRect(x: skipForwardButton.frame.maxX + 8, y: transY, width: btnSize, height: btnSize)
-            let maxVolWidth: CGFloat = min(60, max(28, bounds.width - 240))
+            let maxVolWidth: CGFloat = min(54, max(22, bounds.width - 275))
             volumeSlider.frame = NSRect(x: volumeButton.frame.maxX + 4, y: transY + 2, width: maxVolWidth, height: 18)
             
             closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
             openButton.frame = NSRect(x: closeButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             copyButton.frame = NSRect(x: openButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             pinButton.frame = NSRect(x: copyButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            syncCalibrationButton.isHidden = false
+            syncCalibrationButton.frame = NSRect(x: pinButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            
+            layoutSyncDrawer(padLeft: padLeft, padRight: padRight)
         } else if hasVideo {
-            // Full 16:9 Video Preview + Controls Layout (Height: 14 + videoH + 104)
+            // Full 16:9 Video Preview + Controls Layout (Height: 14 + videoH + 104 + drawerExtraHeight)
             pipBadge.isHidden = true
             videoPlayerView.isHidden = false
             scrubberSlider.isHidden = false
@@ -593,7 +670,7 @@ public final class FloatingPillView: NSView {
             skipForwardButton.frame = NSRect(x: playPauseButton.frame.maxX + spacing, y: transY, width: btnSize, height: btnSize)
             
             volumeButton.frame = NSRect(x: skipForwardButton.frame.maxX + 8, y: transY, width: btnSize, height: btnSize)
-            let maxVolWidth: CGFloat = min(60, max(28, bounds.width - 240))
+            let maxVolWidth: CGFloat = min(54, max(22, bounds.width - 275))
             volumeSlider.frame = NSRect(x: volumeButton.frame.maxX + 4, y: transY + 2, width: maxVolWidth, height: 18)
             
             // Right edge action buttons on transport row
@@ -601,9 +678,12 @@ public final class FloatingPillView: NSView {
             openButton.frame = NSRect(x: closeButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             copyButton.frame = NSRect(x: openButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             pinButton.frame = NSRect(x: copyButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            syncCalibrationButton.isHidden = false
+            syncCalibrationButton.frame = NSRect(x: pinButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             
-            // 3. Metadata row: bottom area (y: 6 to transY - 4)
-            let metaY: CGFloat = 8
+            // 3. Metadata row: bottom area (y: 6 + bottomOffset to transY - 4)
+            let bottomOffset: CGFloat = isSyncCalibrationExpanded ? 54 : 0
+            let metaY: CGFloat = 8 + bottomOffset
             let iconSize: CGFloat = 26
             badgeContainer.frame = NSRect(x: padLeft, y: metaY, width: iconSize, height: iconSize)
             badgeContainer.layer?.cornerRadius = 13
@@ -614,8 +694,12 @@ public final class FloatingPillView: NSView {
             titleLabel.frame = NSRect(x: textLeft, y: metaY + 12, width: textWidth, height: 16)
             artistLabel.frame = NSRect(x: textLeft, y: metaY - 1, width: max(40, textWidth - 55), height: 14)
             browserBadge.frame = NSRect(x: textLeft + max(40, textWidth - 55) + 4, y: metaY, width: 45, height: 13)
+            
+            layoutSyncDrawer(padLeft: padLeft, padRight: padRight)
         } else {
             // Compact Audio Mode Layout (Height: 56)
+            syncCalibrationButton.isHidden = true
+            syncDrawerContainer.isHidden = true
             pipBadge.isHidden = true
             videoPlayerView.isHidden = true
             scrubberSlider.isHidden = true
@@ -720,8 +804,10 @@ public final class FloatingPillView: NSView {
     public func calculateFittingSize() -> NSSize {
         let width = max(260, min(650, preferredPanelWidth))
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
+        let drawerExtraHeight: CGFloat = isSyncCalibrationExpanded ? 54 : 0
+        
         if isNativePiPActive {
-            return NSSize(width: width, height: 114)
+            return NSSize(width: width, height: 114 + drawerExtraHeight)
         }
         if hasVideo {
             let padLeft: CGFloat = 18
@@ -730,7 +816,7 @@ public final class FloatingPillView: NSView {
             let videoH = videoW * 9.0 / 16.0
             let bottomBarHeight: CGFloat = 104
             let topPadding: CGFloat = 14
-            let height = topPadding + videoH + bottomBarHeight
+            let height = topPadding + videoH + bottomBarHeight + drawerExtraHeight
             return NSSize(width: width, height: height)
         }
         
@@ -900,5 +986,101 @@ public final class FloatingPillView: NSView {
     
     @objc private func handleClose() {
         onDismiss?()
+    }
+    
+    private func layoutSyncDrawer(padLeft: CGFloat, padRight: CGFloat) {
+        if isSyncCalibrationExpanded {
+            syncDrawerContainer.isHidden = false
+            let drawerW = bounds.width - padLeft - padRight
+            syncDrawerContainer.frame = NSRect(x: padLeft, y: 8, width: drawerW, height: 48)
+            
+            let row1Y: CGFloat = 26
+            syncDrawerTitleLabel.frame = NSRect(x: 8, y: row1Y, width: 52, height: 16)
+            syncDrawerValueLabel.frame = NSRect(x: 62, y: row1Y, width: 50, height: 16)
+            
+            let btnH: CGFloat = 17
+            presetPlus100Button.frame = NSRect(x: drawerW - 8 - 42, y: row1Y, width: 42, height: btnH)
+            presetZeroButton.frame = NSRect(x: presetPlus100Button.frame.minX - 4 - 30, y: row1Y, width: 30, height: btnH)
+            presetMinus120Button.frame = NSRect(x: presetZeroButton.frame.minX - 4 - 42, y: row1Y, width: 42, height: btnH)
+            presetMinus250Button.frame = NSRect(x: presetMinus120Button.frame.minX - 4 - 44, y: row1Y, width: 44, height: btnH)
+            
+            syncDrawerSlider.frame = NSRect(x: 8, y: 5, width: drawerW - 16, height: 16)
+        } else {
+            syncDrawerContainer.isHidden = true
+        }
+    }
+    
+    private func configureDrawerPresetButton(_ button: NSButton, title: String, action: Selector) {
+        button.title = title
+        button.bezelStyle = .inline
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.backgroundColor = NSColor(white: 0.22, alpha: 0.85).cgColor
+        button.layer?.cornerRadius = 4
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
+        button.target = self
+        button.action = action
+    }
+    
+    @objc private func handleToggleSyncCalibration() {
+        isSyncCalibrationExpanded.toggle()
+    }
+    
+    private func updateSyncCalibrationButtonIcon() {
+        let symbol = isSyncCalibrationExpanded ? "chevron.up" : "chevron.down"
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "Lip-Sync Calibration")?.withSymbolConfiguration(config) {
+            syncCalibrationButton.image = img
+            syncCalibrationButton.contentTintColor = isSyncCalibrationExpanded ? .systemBlue : .white
+        }
+    }
+    
+    @objc private func handleDrawerSliderChanged() {
+        let val = round(syncDrawerSlider.doubleValue / 10.0) * 10.0
+        applySyncOffset(val)
+    }
+    
+    @objc private func handlePresetMinus250() { applySyncOffset(-250) }
+    @objc private func handlePresetMinus120() { applySyncOffset(-120) }
+    @objc private func handlePresetZero() { applySyncOffset(0) }
+    @objc private func handlePresetPlus100() { applySyncOffset(100) }
+    
+    private func applySyncOffset(_ ms: Double) {
+        syncDrawerSlider.doubleValue = ms
+        syncDrawerValueLabel.stringValue = ms > 0 ? "+\(Int(ms)) ms" : "\(Int(ms)) ms"
+        UserDefaults.standard.set(ms, forKey: "songtop_av_sync_delay_ms")
+        videoPlayerView.syncDelay = ms / 1000.0
+        if videoPlayerView.browserCurrentTime > 0 {
+            videoPlayerView.syncWithBrowser(targetTime: videoPlayerView.browserCurrentTime, isPaused: !videoPlayerView.isPlaying)
+        }
+        NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+    }
+    
+    private func loadInitialSyncDelay() {
+        var ms = UserDefaults.standard.object(forKey: "songtop_av_sync_delay_ms") != nil
+            ? UserDefaults.standard.double(forKey: "songtop_av_sync_delay_ms")
+            : 0.0
+        if ms == 250.0 {
+            ms = 0.0
+            UserDefaults.standard.set(0.0, forKey: "songtop_av_sync_delay_ms")
+        }
+        syncDrawerSlider.doubleValue = ms
+        syncDrawerValueLabel.stringValue = ms > 0 ? "+\(Int(ms)) ms" : "\(Int(ms)) ms"
+    }
+    
+    @objc private func handleSettingsChanged() {
+        var ms = UserDefaults.standard.object(forKey: "songtop_av_sync_delay_ms") != nil
+            ? UserDefaults.standard.double(forKey: "songtop_av_sync_delay_ms")
+            : 0.0
+        if ms == 250.0 {
+            ms = 0.0
+            UserDefaults.standard.set(0.0, forKey: "songtop_av_sync_delay_ms")
+        }
+        syncDrawerSlider.doubleValue = ms
+        syncDrawerValueLabel.stringValue = ms > 0 ? "+\(Int(ms)) ms" : "\(Int(ms)) ms"
+        videoPlayerView.syncDelay = ms / 1000.0
+        if videoPlayerView.browserCurrentTime > 0 {
+            videoPlayerView.syncWithBrowser(targetTime: videoPlayerView.browserCurrentTime, isPaused: !videoPlayerView.isPlaying)
+        }
     }
 }

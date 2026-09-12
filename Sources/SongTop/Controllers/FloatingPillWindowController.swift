@@ -708,6 +708,9 @@ public final class FloatingPillWindowController: NSObject {
         pv.onResizeCompleted = { [weak self] in
             self?.handleResizeCompleted()
         }
+        pv.onHeightChanged = { [weak self] in
+            self?.handlePanelHeightChanged()
+        }
         pv.onCopyTitle = { [weak detector] in
             if let t = detector?.currentTrack {
                 let pasteboard = NSPasteboard.general
@@ -852,6 +855,25 @@ public final class FloatingPillWindowController: NSObject {
         if let pv = pillView {
             customPanelWidth = pv.preferredPanelWidth
         }
+    }
+    
+    private func handlePanelHeightChanged() {
+        guard let panel = pillPanel, let pv = pillView, let screen = NSScreen.main else { return }
+        let fittingSize = pv.calculateFittingSize()
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let targetX = screenFrame.maxX - fittingSize.width
+        let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
+        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
+        
+        cachedPillRect = targetFrame.insetBy(dx: -40, dy: -30)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.20
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(targetFrame, display: true)
+        }
+        pv.frame = NSRect(origin: .zero, size: fittingSize)
+        pv.needsLayout = true
     }
     
     private func repositionPanel() {
