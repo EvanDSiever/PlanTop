@@ -29,8 +29,13 @@ public final class YouTubeDetector: ObservableObject {
     private var timer: Timer?
     private var telemetryTimer: Timer?
     private let queue = DispatchQueue(label: "com.songtop.detector", qos: .userInitiated)
+    private var trackPositions: [String: (cur: Double, dur: Double, paused: Bool, vol: Int, muted: Bool)] = [:]
     
     public init() {}
+    
+    public func cachedPosition(for url: String) -> Double? {
+        return trackPositions[url]?.cur
+    }
     
     public func start(interval: TimeInterval = 1.5) {
         stop()
@@ -65,6 +70,16 @@ public final class YouTubeDetector: ObservableObject {
             if let t = track {
                 self.isAutoTracking = false
                 self.selectedTrackURL = t.url
+                if let cached = self.trackPositions[t.url] {
+                    self.tabCurrentTime = cached.cur
+                    self.tabDuration = cached.dur
+                    self.tabIsPaused = cached.paused
+                    self.tabVolume = cached.vol
+                    self.tabIsMuted = cached.muted
+                } else {
+                    self.tabCurrentTime = 0.0
+                    self.tabDuration = 0.0
+                }
                 self.currentTrack = t
                 self.pollTabPlaybackState(track: t, completion: nil)
             } else {
@@ -150,6 +165,14 @@ public final class YouTubeDetector: ObservableObject {
             if self.currentTrack != chosenTrack {
                 self.currentTrack = chosenTrack
                 if let t = chosenTrack {
+                    if let cached = self.trackPositions[t.url] {
+                        self.tabCurrentTime = cached.cur
+                        self.tabDuration = cached.dur
+                        self.tabIsPaused = cached.paused
+                    } else {
+                        self.tabCurrentTime = 0.0
+                        self.tabDuration = 0.0
+                    }
                     self.pollTabPlaybackState(track: t, completion: nil)
                 }
             }
@@ -365,7 +388,13 @@ public final class YouTubeDetector: ObservableObject {
         (function() {
             var v = document.querySelector('video');
             if (v) {
-                v.currentTime = \(toSeconds);
+                var target = \(toSeconds);
+                if (v.duration && isFinite(v.duration) && v.duration > 1.0) {
+                    if (target >= v.duration - 0.5) {
+                        return 'BLOCKED_PAST_END';
+                    }
+                }
+                v.currentTime = target;
                 return 'OK';
             }
             return 'NO_VIDEO';
@@ -504,6 +533,15 @@ public final class YouTubeDetector: ObservableObject {
                     // Compensate for full round-trip AppleScript and WebKit dispatch latency
                     if !paused && latency > 0 && latency < 0.8 {
                         cur += (latency + 0.05)
+                    }
+                    
+                    // Always cache last known telemetry for this track URL
+                    self.trackPositions[track.url] = (cur: cur, dur: dur, paused: paused, vol: vol, muted: muted)
+                    
+                    // Crucial: Only update active telemetry if this track is STILL the currently selected track!
+                    guard track.url == self.currentTrack?.url else {
+                        completion?((cur, dur, paused, vol, muted))
+                        return
                     }
                     
                     self.tabCurrentTime = cur

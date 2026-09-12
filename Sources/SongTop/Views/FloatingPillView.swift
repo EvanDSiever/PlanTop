@@ -129,6 +129,7 @@ public final class FloatingPillView: NSView {
     public var onHoverStateChanged: ((Bool) -> Void)?
     
     private var currentTrack: TrackInfo?
+    public var currentTrackUrl: String? { currentTrack?.url }
     
     public var currentTime: Double {
         return videoPlayerView.currentTime
@@ -585,7 +586,14 @@ public final class FloatingPillView: NSView {
     }
     
     public func update(with track: TrackInfo?, initialSeconds: Double? = nil) {
+        let isDifferentTrack = (track?.url != currentTrack?.url)
         self.currentTrack = track
+        
+        if isDifferentTrack {
+            currentTimeLabel.stringValue = "00:00"
+            durationLabel.stringValue = "00:00"
+            scrubberSlider.doubleValue = 0
+        }
         
         let hasVideo = isVideoPreviewEnabled && (track?.isVideo ?? false)
         

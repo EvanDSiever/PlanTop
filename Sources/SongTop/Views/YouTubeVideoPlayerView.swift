@@ -243,6 +243,12 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
 
                 var delay = (typeof delaySec === 'number' && isFinite(delaySec)) ? delaySec : 0.0;
                 var effectiveTarget = Math.max(0, targetTime - delay);
+                var vDur = (p && p.getDuration) ? p.getDuration() : (v.duration || 0);
+                if (vDur && isFinite(vDur) && vDur > 1.0) {
+                    if (effectiveTarget >= vDur - 0.5) {
+                        effectiveTarget = Math.max(0, vDur - 0.6);
+                    }
+                }
 
                 if (isPaused) {
                     if (!v.paused) {
@@ -608,6 +614,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
     
     public func syncWithBrowser(targetTime: Double, isPaused: Bool) {
         guard isReady, !isAdActive, targetTime >= 0 else { return }
+        if duration > 1.0 && targetTime >= duration - 0.5 { return }
         let js = """
         (function() {
             if (typeof window._songTopSync === 'function') {

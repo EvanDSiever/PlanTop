@@ -413,9 +413,12 @@ public final class FloatingPillWindowController: NSObject {
         
         // Sync watching progress back to browser if enabled
         if isPiPSyncProgressEnabled, let pv = pillView, let track = detector.currentTrack {
-            let panelTime = pv.currentTime
-            if panelTime > 1.0 {
-                detector.seekBrowser(track: track, toSeconds: panelTime)
+            // Guard: Only sync progress if pillView is currently displaying THIS exact track!
+            if pv.currentTrackUrl == track.url {
+                let panelTime = pv.currentTime
+                if panelTime > 1.0 && (pv.duration <= 0 || panelTime < pv.duration - 1.0) {
+                    detector.seekBrowser(track: track, toSeconds: panelTime)
+                }
             }
         }
         
@@ -775,7 +778,14 @@ public final class FloatingPillWindowController: NSObject {
     private func updateContent(track: TrackInfo?) {
         let (panel, pv) = setupPillPanel()
         pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
-        let currentSec: Double? = detector.tabCurrentTime > 0 ? detector.tabCurrentTime : nil
+        let currentSec: Double?
+        if let t = track, detector.currentTrack?.url == t.url, detector.tabCurrentTime > 0 {
+            currentSec = detector.tabCurrentTime
+        } else if let t = track, let cached = detector.cachedPosition(for: t.url), cached > 0 {
+            currentSec = cached
+        } else {
+            currentSec = nil
+        }
         pv.update(with: track, initialSeconds: currentSec)
         pv.updateAvailableTracks(detector.availableTracks, selectedTrack: track, isAuto: detector.isAutoTracking)
         if isPiPActive && isPiPAudioTransferEnabled {
@@ -795,7 +805,14 @@ public final class FloatingPillWindowController: NSObject {
         
         pv.preferredPanelWidth = customPanelWidth
         pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
-        let currentSec: Double? = detector.tabCurrentTime > 0 ? detector.tabCurrentTime : nil
+        let currentSec: Double?
+        if detector.currentTrack != nil, detector.tabCurrentTime > 0 {
+            currentSec = detector.tabCurrentTime
+        } else if let t = detector.currentTrack, let cached = detector.cachedPosition(for: t.url), cached > 0 {
+            currentSec = cached
+        } else {
+            currentSec = nil
+        }
         pv.update(with: detector.currentTrack, initialSeconds: currentSec)
         pv.updateAvailableTracks(detector.availableTracks, selectedTrack: detector.currentTrack, isAuto: detector.isAutoTracking)
         if isPiPActive && isPiPAudioTransferEnabled {
