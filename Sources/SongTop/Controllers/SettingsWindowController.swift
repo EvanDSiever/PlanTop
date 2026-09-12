@@ -11,19 +11,19 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let browserBadge = NSTextField(labelWithString: "Chrome")
     
     // Mode Control
-    private let modeSegmentedControl = NSSegmentedControl(labels: ["Hover Dropdown", "Always Floating", "Menu Bar Only"], trackingMode: .selectOne, target: nil, action: nil)
+    private let modeSegmentedControl = NSSegmentedControl(labels: ["Right Hover Slide", "Always Visible Panel", "Menu Bar Only"], trackingMode: .selectOne, target: nil, action: nil)
     
-    // Hover Controls
-    private let widthSlider = NSSlider(value: 850, minValue: 300, maxValue: 1600, target: nil, action: nil)
-    private let widthValueLabel = NSTextField(labelWithString: "850 px")
-    private let heightSlider = NSSlider(value: 75, minValue: 30, maxValue: 150, target: nil, action: nil)
-    private let heightValueLabel = NSTextField(labelWithString: "75 px")
+    // Hover Controls (Right-Edge)
+    private let widthSlider = NSSlider(value: 65, minValue: 25, maxValue: 150, target: nil, action: nil)
+    private let widthValueLabel = NSTextField(labelWithString: "65 px")
+    private let heightSlider = NSSlider(value: 550, minValue: 200, maxValue: 1100, target: nil, action: nil)
+    private let heightValueLabel = NSTextField(labelWithString: "550 px")
     private let sensitivitySlider = NSSlider(value: 0.0, minValue: 0.0, maxValue: 0.35, target: nil, action: nil)
     private let sensitivityValueLabel = NSTextField(labelWithString: "Instant (0.0s)")
-    private let guideButton = NSButton(title: "🎯 Highlight Zone", target: nil, action: nil)
+    private let guideButton = NSButton(title: "🎯 Highlight Right Zone", target: nil, action: nil)
     
     // Auto Peek Controls
-    private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically drop down when a new song starts", target: nil, action: nil)
+    private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically stretch out when a new song starts", target: nil, action: nil)
     private let peekDurationSlider = NSSlider(value: 5.0, minValue: 2.0, maxValue: 10.0, target: nil, action: nil)
     private let peekDurationLabel = NSTextField(labelWithString: "5.0 s")
     
@@ -123,10 +123,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         appTitle.frame = NSRect(x: 82, y: currentY - 32, width: 300, height: 24)
         container.addSubview(appTitle)
         
-        let appSubtitle = NSTextField(labelWithString: "YouTube Now Playing for macOS • Settings & Customizer")
+        let appSubtitle = NSTextField(labelWithString: "YouTube Now Playing for macOS • Right-Side Panel Settings")
         appSubtitle.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         appSubtitle.textColor = .secondaryLabelColor
-        appSubtitle.frame = NSRect(x: 82, y: currentY - 48, width: 380, height: 16)
+        appSubtitle.frame = NSRect(x: 82, y: currentY - 48, width: 390, height: 16)
         container.addSubview(appSubtitle)
         
         currentY -= 70
@@ -152,9 +152,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         trackSubtitleLabel.lineBreakMode = .byTruncatingTail
         liveCard.addSubview(trackSubtitleLabel)
         
-        let testBtn = NSButton(title: "Test Dropdown", target: self, action: #selector(testDropdownClicked))
+        let testBtn = NSButton(title: "Test Side Panel", target: self, action: #selector(testDropdownClicked))
         testBtn.bezelStyle = .rounded
-        testBtn.frame = NSRect(x: 350, y: 22, width: 116, height: 28)
+        testBtn.frame = NSRect(x: 345, y: 22, width: 122, height: 28)
         liveCard.addSubview(testBtn)
         
         currentY -= 95
@@ -175,29 +175,29 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY -= 90
         
-        // 4. Hover Sensitivity & Area Card
+        // 4. Right-Edge Hover Sensitivity & Area Card
         let hoverCard = createCardView(frame: NSRect(x: 20, y: currentY - 180, width: 480, height: 174))
         container.addSubview(hoverCard)
         
-        let hoverTitle = NSTextField(labelWithString: "Top-Screen Hover Sensitivity & Area")
+        let hoverTitle = NSTextField(labelWithString: "Right-Edge Hover Sensitivity & Area")
         hoverTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        hoverTitle.frame = NSRect(x: 14, y: 146, width: 280, height: 16)
+        hoverTitle.frame = NSRect(x: 14, y: 146, width: 270, height: 16)
         hoverCard.addSubview(hoverTitle)
         
-        guideButton.frame = NSRect(x: 310, y: 142, width: 156, height: 24)
+        guideButton.frame = NSRect(x: 295, y: 142, width: 172, height: 24)
         guideButton.bezelStyle = .rounded
         guideButton.target = self
         guideButton.action = #selector(toggleGuideClicked)
         hoverCard.addSubview(guideButton)
         
-        // Width Slider (Continuous)
-        let wLabel = NSTextField(labelWithString: "Scan Width:")
+        // Edge Reach Slider (Continuous)
+        let wLabel = NSTextField(labelWithString: "Edge Reach:")
         wLabel.font = NSFont.systemFont(ofSize: 11)
-        wLabel.frame = NSRect(x: 14, y: 114, width: 80, height: 16)
+        wLabel.frame = NSRect(x: 14, y: 114, width: 85, height: 16)
         hoverCard.addSubview(wLabel)
         
         widthSlider.isContinuous = true
-        widthSlider.frame = NSRect(x: 95, y: 112, width: 300, height: 20)
+        widthSlider.frame = NSRect(x: 100, y: 112, width: 295, height: 20)
         widthSlider.target = self
         widthSlider.action = #selector(widthSliderChanged)
         hoverCard.addSubview(widthSlider)
@@ -207,14 +207,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         widthValueLabel.frame = NSRect(x: 400, y: 114, width: 65, height: 16)
         hoverCard.addSubview(widthValueLabel)
         
-        // Height Slider (Continuous)
-        let hLabel = NSTextField(labelWithString: "Scan Height:")
+        // Vertical Span Slider (Continuous)
+        let hLabel = NSTextField(labelWithString: "Vertical Span:")
         hLabel.font = NSFont.systemFont(ofSize: 11)
-        hLabel.frame = NSRect(x: 14, y: 78, width: 80, height: 16)
+        hLabel.frame = NSRect(x: 14, y: 78, width: 85, height: 16)
         hoverCard.addSubview(hLabel)
         
         heightSlider.isContinuous = true
-        heightSlider.frame = NSRect(x: 95, y: 76, width: 300, height: 20)
+        heightSlider.frame = NSRect(x: 100, y: 76, width: 295, height: 20)
         heightSlider.target = self
         heightSlider.action = #selector(heightSliderChanged)
         hoverCard.addSubview(heightSlider)
@@ -224,14 +224,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         heightValueLabel.frame = NSRect(x: 400, y: 78, width: 65, height: 16)
         hoverCard.addSubview(heightValueLabel)
         
-        // Sensitivity / Trigger Delay Slider (Continuous)
+        // Trigger Delay Slider (Continuous)
         let sLabel = NSTextField(labelWithString: "Trigger Delay:")
         sLabel.font = NSFont.systemFont(ofSize: 11)
-        sLabel.frame = NSRect(x: 14, y: 42, width: 80, height: 16)
+        sLabel.frame = NSRect(x: 14, y: 42, width: 85, height: 16)
         hoverCard.addSubview(sLabel)
         
         sensitivitySlider.isContinuous = true
-        sensitivitySlider.frame = NSRect(x: 95, y: 40, width: 300, height: 20)
+        sensitivitySlider.frame = NSRect(x: 100, y: 40, width: 295, height: 20)
         sensitivitySlider.target = self
         sensitivitySlider.action = #selector(sensitivitySliderChanged)
         hoverCard.addSubview(sensitivitySlider)
@@ -241,7 +241,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sensitivityValueLabel.frame = NSRect(x: 395, y: 42, width: 75, height: 16)
         hoverCard.addSubview(sensitivityValueLabel)
         
-        let hoverDesc = NSTextField(labelWithString: "💡 Tip: Click Highlight Zone to test your mouse. The zone turns green when active.")
+        let hoverDesc = NSTextField(labelWithString: "💡 Tip: Hover near the right edge of your screen. The panel stretches out smoothly.")
         hoverDesc.font = NSFont.systemFont(ofSize: 10)
         hoverDesc.textColor = .secondaryLabelColor
         hoverDesc.frame = NSRect(x: 14, y: 12, width: 450, height: 16)
@@ -350,8 +350,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private func loadInitialValues() {
         modeSegmentedControl.selectedSegment = pillController.displayMode.rawValue
         
-        widthSlider.doubleValue = Double(pillController.scanWidth)
-        widthValueLabel.stringValue = "\(Int(pillController.scanWidth)) px"
+        widthSlider.doubleValue = Double(pillController.scanReach)
+        widthValueLabel.stringValue = "\(Int(pillController.scanReach)) px"
         
         heightSlider.doubleValue = Double(pillController.scanHeight)
         heightValueLabel.stringValue = "\(Int(pillController.scanHeight)) px"
@@ -364,7 +364,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         peekDurationLabel.stringValue = String(format: "%.1f s", pillController.peekDuration)
         
         menuBarTitleCheckbox.state = menuBarController.showTitleInMenuBar ? .on : .off
-        guideButton.title = pillController.isGuidePinned ? "Hide Zone Guide" : "🎯 Highlight Zone"
+        guideButton.title = pillController.isGuidePinned ? "Hide Right Zone" : "🎯 Highlight Right Zone"
     }
     
     private func updateSensitivityLabel(delay: Double) {
@@ -377,7 +377,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func toggleGuideClicked() {
         pillController.toggleGuide()
-        guideButton.title = pillController.isGuidePinned ? "Hide Zone Guide" : "🎯 Highlight Zone"
+        guideButton.title = pillController.isGuidePinned ? "Hide Right Zone" : "🎯 Highlight Right Zone"
     }
     
     @objc private func testDropdownClicked() {
@@ -392,7 +392,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func widthSliderChanged() {
         let val = widthSlider.doubleValue
-        pillController.scanWidth = CGFloat(val)
+        pillController.scanReach = CGFloat(val)
         widthValueLabel.stringValue = "\(Int(val)) px"
         pillController.showTriggerZoneGuide(temporarily: true)
     }

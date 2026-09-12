@@ -181,7 +181,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         // Settings / Preferences
         let dropDownItem = NSMenuItem(
-            title: "Drop Down on Top Hover",
+            title: "Slide Out on Right Edge Hover",
             action: #selector(setHoverDropDownMode),
             keyEquivalent: ""
         )
@@ -190,7 +190,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(dropDownItem)
         
         let alwaysVisibleItem = NSMenuItem(
-            title: "Always Keep Top Banner Visible",
+            title: "Always Keep Side Panel Visible",
             action: #selector(setAlwaysVisibleMode),
             keyEquivalent: ""
         )
@@ -199,7 +199,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(alwaysVisibleItem)
         
         let disablePillItem = NSMenuItem(
-            title: "Hide Top Banner (Menu Bar Only)",
+            title: "Hide Side Panel (Menu Bar Only)",
             action: #selector(setDisabledMode),
             keyEquivalent: ""
         )
@@ -220,10 +220,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
-        // Trigger Drop Down Preview
-        let testItem = NSMenuItem(title: "Trigger Drop Down Preview", action: #selector(testDropDownClicked), keyEquivalent: "t")
+        // Trigger Slide Out Preview
+        let testItem = NSMenuItem(title: "Trigger Side Panel Preview", action: #selector(testDropDownClicked), keyEquivalent: "t")
         testItem.target = self
-        testItem.image = NSImage(systemSymbolName: "arrow.down.to.line.compact", accessibilityDescription: nil)
+        testItem.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: nil)
         menu.addItem(testItem)
         
         // Refresh Now

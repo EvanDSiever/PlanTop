@@ -36,13 +36,17 @@ public final class FloatingPillWindowController: NSObject {
     private var isHoveringActive: Bool = false
     private var lastTrackId: String = ""
     
-    // Customizable scan dimensions
-    public var scanWidth: CGFloat = 850 {
+    // Customizable scan dimensions for Right-Edge Hover
+    public var scanReach: CGFloat = 65 {
         didSet {
-            UserDefaults.standard.set(Double(scanWidth), forKey: "scanWidth")
+            UserDefaults.standard.set(Double(scanReach), forKey: "scanReach")
         }
     }
-    public var scanHeight: CGFloat = 75 {
+    public var scanWidth: CGFloat {
+        get { return scanReach }
+        set { scanReach = newValue }
+    }
+    public var scanHeight: CGFloat = 550 {
         didSet {
             UserDefaults.standard.set(Double(scanHeight), forKey: "scanHeight")
         }
@@ -121,11 +125,15 @@ public final class FloatingPillWindowController: NSObject {
         if UserDefaults.standard.object(forKey: "hoverDropOnly") != nil {
             self.hoverDropOnly = UserDefaults.standard.bool(forKey: "hoverDropOnly")
         }
-        if UserDefaults.standard.object(forKey: "scanWidth") != nil {
-            self.scanWidth = CGFloat(UserDefaults.standard.double(forKey: "scanWidth"))
+        if UserDefaults.standard.object(forKey: "scanReach") != nil {
+            self.scanReach = CGFloat(UserDefaults.standard.double(forKey: "scanReach"))
+        } else if UserDefaults.standard.object(forKey: "scanWidth") != nil {
+            let old = CGFloat(UserDefaults.standard.double(forKey: "scanWidth"))
+            self.scanReach = old > 200 ? 65 : old
         }
         if UserDefaults.standard.object(forKey: "scanHeight") != nil {
-            self.scanHeight = CGFloat(UserDefaults.standard.double(forKey: "scanHeight"))
+            let val = CGFloat(UserDefaults.standard.double(forKey: "scanHeight"))
+            self.scanHeight = val < 150 ? 550 : val
         }
         if UserDefaults.standard.object(forKey: "hoverDelay") != nil {
             self.hoverDelay = UserDefaults.standard.double(forKey: "hoverDelay")
@@ -193,17 +201,20 @@ public final class FloatingPillWindowController: NSObject {
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         
-        // Comprehensive trigger zone respecting macOS Menu Bar settings:
-        // - Spans from the absolute top of the screen (screenFrame.maxY)
-        // - Reaches through the menu bar down into the visible frame by scanHeight
-        let effectiveWidth = min(scanWidth, screenFrame.width * 0.95)
-        let triggerTop = screenFrame.maxY
-        let triggerBottom = visibleFrame.maxY - scanHeight
+        // Panel vertical center (upper-middle right, cleanly away from dock and corners)
+        let panelHeight: CGFloat = 56
+        let targetY = visibleFrame.midY - (panelHeight / 2) + 20
+        let effectiveReach = min(scanReach, screenFrame.width * 0.3)
+        let effectiveHeight = min(scanHeight, visibleFrame.height)
+        let triggerY = max(visibleFrame.minY, targetY - ((effectiveHeight - panelHeight) / 2))
+        
+        // Comprehensive right-edge trigger zone:
+        // Spans flush from the right edge of the screen inward by scanReach
         let triggerRect = NSRect(
-            x: screenFrame.midX - (effectiveWidth / 2),
-            y: triggerBottom,
-            width: effectiveWidth,
-            height: triggerTop - triggerBottom
+            x: screenFrame.maxX - effectiveReach,
+            y: triggerY,
+            width: effectiveReach,
+            height: effectiveHeight
         )
         
         let inTrigger = NSPointInRect(mouse, triggerRect)
@@ -291,15 +302,17 @@ public final class FloatingPillWindowController: NSObject {
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         
-        let effectiveWidth = min(scanWidth, screenFrame.width * 0.95)
-        let triggerTop = screenFrame.maxY
-        let triggerBottom = visibleFrame.maxY - scanHeight
-        let triggerHeight = triggerTop - triggerBottom
+        let panelHeight: CGFloat = 56
+        let targetY = visibleFrame.midY - (panelHeight / 2) + 20
+        let effectiveReach = min(scanReach, screenFrame.width * 0.3)
+        let effectiveHeight = min(scanHeight, visibleFrame.height)
+        let triggerY = max(visibleFrame.minY, targetY - ((effectiveHeight - panelHeight) / 2))
+        
         let targetRect = NSRect(
-            x: screenFrame.midX - (effectiveWidth / 2),
-            y: triggerBottom,
-            width: effectiveWidth,
-            height: triggerHeight
+            x: screenFrame.maxX - effectiveReach,
+            y: triggerY,
+            width: effectiveReach,
+            height: effectiveHeight
         )
         
         if guidePanel == nil {
@@ -318,10 +331,11 @@ public final class FloatingPillWindowController: NSObject {
             
             let view = NSView(frame: NSRect(origin: .zero, size: targetRect.size))
             view.wantsLayer = true
-            view.layer?.cornerRadius = 10
+            view.layer?.cornerRadius = 14
+            view.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
             
             let lbl = NSTextField(labelWithString: "")
-            lbl.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+            lbl.font = NSFont.systemFont(ofSize: 11, weight: .bold)
             lbl.textColor = .white
             lbl.alignment = .center
             view.addSubview(lbl)
@@ -359,18 +373,18 @@ public final class FloatingPillWindowController: NSObject {
     private func updateGuideAppearance(isInside: Bool) {
         guard let panel = guidePanel, let view = panel.contentView, let label = guideLabel else { return }
         let targetRect = panel.frame
-        label.frame = NSRect(x: 0, y: max(4, (targetRect.height - 20) / 2), width: targetRect.width, height: 20)
+        label.frame = NSRect(x: 4, y: max(4, (targetRect.height - 30) / 2), width: max(30, targetRect.width - 8), height: 30)
         
         if isInside {
-            view.layer?.backgroundColor = NSColor(red: 0.15, green: 0.8, blue: 0.4, alpha: 0.32).cgColor
+            view.layer?.backgroundColor = NSColor(red: 0.15, green: 0.8, blue: 0.4, alpha: 0.35).cgColor
             view.layer?.borderWidth = 2.0
             view.layer?.borderColor = NSColor(red: 0.2, green: 0.95, blue: 0.45, alpha: 0.95).cgColor
-            label.stringValue = "🎯 Cursor Inside Hover Zone (Active!) — \(Int(scanWidth))px × \(Int(scanHeight))px"
+            label.stringValue = targetRect.width > 70 ? "🎯 Active Hover Zone!\n(\(Int(scanReach))px reach)" : "🎯 Active"
         } else {
-            view.layer?.backgroundColor = NSColor(red: 0.1, green: 0.55, blue: 1.0, alpha: 0.20).cgColor
+            view.layer?.backgroundColor = NSColor(red: 0.1, green: 0.55, blue: 1.0, alpha: 0.22).cgColor
             view.layer?.borderWidth = 1.5
             view.layer?.borderColor = NSColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.85).cgColor
-            label.stringValue = "🎯 Hover Zone: \(Int(scanWidth))px wide × \(Int(scanHeight))px reach"
+            label.stringValue = targetRect.width > 70 ? "🎯 Right Edge Zone\n(\(Int(scanReach))px reach)" : "🎯 Zone"
         }
     }
     
@@ -414,7 +428,7 @@ public final class FloatingPillWindowController: NSObject {
         }
         
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 48),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 56),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -427,7 +441,7 @@ public final class FloatingPillWindowController: NSObject {
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         
-        let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: 440, height: 48))
+        let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: 400, height: 56))
         pv.onOpenTab = { [weak detector] in
             if let t = detector?.currentTrack {
                 detector?.focusTab(track: t)
@@ -468,21 +482,31 @@ public final class FloatingPillWindowController: NSObject {
         panel.setContentSize(fittingSize)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
         
+        let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let targetX = visibleFrame.midX - (fittingSize.width / 2)
-        // Anchor directly underneath the user's macOS Menu Bar
-        let targetY = visibleFrame.maxY - fittingSize.height - 6
         
+        // Anchored flush to the right edge of the display
+        let targetX = screenFrame.maxX - fittingSize.width
+        let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
+        let hiddenX = screenFrame.maxX
+        
+        let wasDropped = isDroppedDown
         isDroppedDown = true
         isPillVisibleInternal = true
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
         
-        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+        if !wasDropped {
+            panel.setFrameOrigin(NSPoint(x: hiddenX, y: targetY))
+            panel.alphaValue = 0.2
+        }
+        
         panel.orderFront(nil)
         
+        // Smooth stretch-out animation from the right bezel
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.duration = 0.28
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
+            panel.animator().setFrameOrigin(NSPoint(x: targetX, y: targetY))
             panel.animator().alphaValue = 1.0
         }
     }
@@ -495,15 +519,25 @@ public final class FloatingPillWindowController: NSObject {
         retractTimer?.invalidate()
         retractTimer = nil
         
+        guard let screen = NSScreen.main else {
+            panel.orderOut(nil)
+            return
+        }
+        let hiddenX = screen.frame.maxX
+        let currentY = panel.frame.origin.y
+        
         if immediately {
             panel.alphaValue = 0.0
+            panel.setFrameOrigin(NSPoint(x: hiddenX, y: currentY))
             panel.orderOut(nil)
             return
         }
         
+        // Slide smoothly back into the right edge
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
+            context.duration = 0.22
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().setFrameOrigin(NSPoint(x: hiddenX, y: currentY))
             panel.animator().alphaValue = 0.0
         }, completionHandler: {
             if !self.isDroppedDown {
@@ -515,9 +549,10 @@ public final class FloatingPillWindowController: NSObject {
     private func repositionPanel() {
         guard let screen = NSScreen.main, let panel = pillPanel, let pv = pillView else { return }
         let fittingSize = pv.calculateFittingSize()
+        let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let targetX = visibleFrame.midX - (fittingSize.width / 2)
-        let targetY = visibleFrame.maxY - fittingSize.height - 6
+        let targetX = screenFrame.maxX - fittingSize.width
+        let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
         panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }

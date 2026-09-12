@@ -41,25 +41,35 @@ public final class FloatingPillView: NSView {
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
-        visualEffectView.layer?.cornerRadius = 24
+        visualEffectView.layer?.cornerRadius = 18
+        // Masked corners: rounded on the left side, flush on the right screen bezel
+        visualEffectView.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         visualEffectView.layer?.masksToBounds = true
-        visualEffectView.layer?.borderWidth = 1.0
+        visualEffectView.layer?.borderWidth = 1.2
         visualEffectView.layer?.borderColor = NSColor(white: 1.0, alpha: 0.22).cgColor
         visualEffectView.appearance = NSAppearance(named: .darkAqua)
         addSubview(visualEffectView)
         
+        // Left Edge Drawer Accent Grip Bar
+        let gripBar = NSView()
+        gripBar.wantsLayer = true
+        gripBar.layer?.cornerRadius = 2
+        gripBar.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.35).cgColor
+        gripBar.identifier = NSUserInterfaceItemIdentifier("gripBar")
+        visualEffectView.addSubview(gripBar)
+        
         // Red Icon Circle
         badgeContainer.wantsLayer = true
-        badgeContainer.layer?.cornerRadius = 17
+        badgeContainer.layer?.cornerRadius = 18
         badgeContainer.layer?.backgroundColor = NSColor(red: 0.92, green: 0.1, blue: 0.14, alpha: 1.0).cgColor
         badgeContainer.layer?.shadowColor = NSColor.red.cgColor
         badgeContainer.layer?.shadowOpacity = 0.5
-        badgeContainer.layer?.shadowRadius = 6
-        badgeContainer.layer?.shadowOffset = CGSize(width: 0, height: -2)
+        badgeContainer.layer?.shadowRadius = 8
+        badgeContainer.layer?.shadowOffset = CGSize(width: 0, height: -1)
         visualEffectView.addSubview(badgeContainer)
         
         // Equalizer in Icon Circle
-        equalizerView.frame = NSRect(x: 6, y: 9, width: 22, height: 16)
+        equalizerView.frame = NSRect(x: 7, y: 10, width: 22, height: 16)
         badgeContainer.addSubview(equalizerView)
         equalizerView.startAnimating()
         
@@ -76,11 +86,11 @@ public final class FloatingPillView: NSView {
         // Browser Badge
         browserBadge.isBezeled = false
         browserBadge.drawsBackground = true
-        browserBadge.backgroundColor = NSColor(white: 1.0, alpha: 0.15)
+        browserBadge.backgroundColor = NSColor(white: 1.0, alpha: 0.16)
         browserBadge.isEditable = false
         browserBadge.isSelectable = false
         browserBadge.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-        browserBadge.textColor = NSColor(white: 1.0, alpha: 0.85)
+        browserBadge.textColor = NSColor(white: 1.0, alpha: 0.88)
         browserBadge.alignment = .center
         browserBadge.wantsLayer = true
         browserBadge.layer?.cornerRadius = 4
@@ -109,8 +119,8 @@ public final class FloatingPillView: NSView {
         copyButton.action = #selector(handleCopy)
         visualEffectView.addSubview(copyButton)
         
-        // Close Button
-        configureIconButton(closeButton, symbol: "xmark", tooltip: "Hide Banner")
+        // Close Button (Chevron Right indicates sliding back into right edge)
+        configureIconButton(closeButton, symbol: "chevron.right", tooltip: "Retract Side Panel")
         closeButton.target = self
         closeButton.action = #selector(handleClose)
         visualEffectView.addSubview(closeButton)
@@ -188,17 +198,23 @@ public final class FloatingPillView: NSView {
         super.layout()
         visualEffectView.frame = bounds
         
-        let padding: CGFloat = 10
-        let iconSize: CGFloat = 34
+        // Left grip bar
+        if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
+            grip.frame = NSRect(x: 5, y: (bounds.height - 28) / 2, width: 3.5, height: 28)
+        }
+        
+        let paddingLeft: CGFloat = 16
+        let paddingRight: CGFloat = 12
+        let iconSize: CGFloat = 36
         
         // Icon
-        badgeContainer.frame = NSRect(x: padding, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
+        badgeContainer.frame = NSRect(x: paddingLeft, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
         
         // Buttons on right
         let buttonSize: CGFloat = 26
         let btnSpacing: CGFloat = 6
         
-        closeButton.frame = NSRect(x: bounds.width - padding - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+        closeButton.frame = NSRect(x: bounds.width - paddingRight - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
         
         if copyButton.isHidden {
             openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
@@ -213,15 +229,15 @@ public final class FloatingPillView: NSView {
         let availableWidth = max(100, textRight - textLeft)
         
         if browserBadge.isHidden {
-            titleLabel.frame = NSRect(x: textLeft, y: bounds.height / 2, width: min(availableWidth, 300), height: 18)
+            titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: min(availableWidth, 320), height: 18)
         } else {
             let badgeWidth = browserBadge.frame.width + 4
             let titleWidth = min(availableWidth - badgeWidth - 6, 280)
-            titleLabel.frame = NSRect(x: textLeft, y: bounds.height / 2, width: titleWidth, height: 18)
-            browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (bounds.height / 2) + 1, width: badgeWidth, height: 16)
+            titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: titleWidth, height: 18)
+            browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (bounds.height / 2) + 2, width: badgeWidth, height: 16)
         }
         
-        artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 17, width: availableWidth, height: 16)
+        artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 18, width: availableWidth, height: 16)
     }
     
     public func calculateFittingSize() -> NSSize {
@@ -230,11 +246,11 @@ public final class FloatingPillView: NSView {
         
         let titleWidth = (titleLabel.stringValue as NSString).size(withAttributes: [.font: titleFont]).width
         let artistWidth = (artistLabel.stringValue as NSString).size(withAttributes: [.font: artistFont]).width
-        let maxTextWidth = min(max(titleWidth + (browserBadge.isHidden ? 0 : 70), artistWidth), 320)
+        let maxTextWidth = min(max(titleWidth + (browserBadge.isHidden ? 0 : 70), artistWidth), 330)
         
         let buttonsCount: CGFloat = copyButton.isHidden ? 2 : 3
-        let totalWidth = 10 + 34 + 10 + maxTextWidth + 10 + (buttonsCount * 26) + ((buttonsCount - 1) * 6) + 10
-        return NSSize(width: max(360, totalWidth), height: 48)
+        let totalWidth = 16 + 36 + 10 + maxTextWidth + 12 + (buttonsCount * 26) + ((buttonsCount - 1) * 6) + 12
+        return NSSize(width: max(380, totalWidth), height: 56)
     }
     
     @objc private func handleOpen() {
