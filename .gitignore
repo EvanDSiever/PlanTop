@@ -1,0 +1,19 @@
+# Xcode / Swift Package Manager
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+
+# Binaries & local app bundle
+/SongTop
+/SongTop.app/
+*.o
+*.swiftdeps
+*.dia
+
+# OS Generated
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+Thumbs.db
