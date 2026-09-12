@@ -73,6 +73,18 @@ public final class FloatingPillView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
     private let browserBadge = NSTextField(labelWithString: "")
+    private let pipBadge = NSTextField(labelWithString: " 📺 PiP Active ")
+    public var isNativePiPActive: Bool = false {
+        didSet {
+            guard oldValue != isNativePiPActive else { return }
+            pipBadge.isHidden = !isNativePiPActive
+            if isNativePiPActive {
+                videoPlayerView.clearVideo()
+                videoPlayerView.isHidden = true
+            }
+            needsLayout = true
+        }
+    }
     
     private let playPauseButton = NSButton()
     private let openButton = NSButton()
@@ -261,6 +273,21 @@ public final class FloatingPillView: NSView {
         browserBadge.layer?.masksToBounds = true
         visualEffectView.addSubview(browserBadge)
         
+        // Native PiP Active Badge
+        pipBadge.isBezeled = false
+        pipBadge.drawsBackground = true
+        pipBadge.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.28)
+        pipBadge.isEditable = false
+        pipBadge.isSelectable = false
+        pipBadge.font = NSFont.systemFont(ofSize: 9, weight: .bold)
+        pipBadge.textColor = NSColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1.0)
+        pipBadge.alignment = .center
+        pipBadge.wantsLayer = true
+        pipBadge.layer?.cornerRadius = 4
+        pipBadge.layer?.masksToBounds = true
+        pipBadge.isHidden = true
+        visualEffectView.addSubview(pipBadge)
+        
         // Artist / Channel Label
         artistLabel.isBezeled = false
         artistLabel.drawsBackground = false
@@ -417,7 +444,10 @@ public final class FloatingPillView: NSView {
             updatePlayPauseState(isPlaying: true)
             openButton.toolTip = "Bring YouTube Tab to Front (\(track.browser))"
             
-            if hasVideo, let vid = track.youtubeVideoId {
+            if isNativePiPActive {
+                videoPlayerView.isHidden = true
+                videoPlayerView.clearVideo()
+            } else if hasVideo, let vid = track.youtubeVideoId {
                 videoPlayerView.isHidden = false
                 videoPlayerView.loadVideo(id: vid, startSeconds: track.startSeconds ?? 0)
                 if isStretchedOut {
@@ -460,13 +490,72 @@ public final class FloatingPillView: NSView {
         }
         
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
-        let gripHeight: CGFloat = hasVideo ? 50 : 28
+        let isCompanion = isNativePiPActive
+        let gripHeight: CGFloat = (hasVideo || isCompanion) ? 50 : 28
         resizeHandle.frame = NSRect(x: 0, y: 0, width: 18, height: bounds.height)
         gripBar.frame = NSRect(x: 5, y: (bounds.height - gripHeight) / 2, width: 3.5, height: gripHeight)
         window?.invalidateCursorRects(for: resizeHandle)
         
-        if hasVideo {
-            // Show video, scrubber, and transport controls
+        if isCompanion {
+            // Native PiP Companion Dock Layout (Height: 114)
+            videoPlayerView.isHidden = true
+            scrubberSlider.isHidden = false
+            currentTimeLabel.isHidden = false
+            durationLabel.isHidden = false
+            skipBackButton.isHidden = false
+            skipForwardButton.isHidden = false
+            volumeButton.isHidden = false
+            volumeSlider.isHidden = false
+            pipBadge.isHidden = false
+            
+            let padLeft: CGFloat = 18
+            let padRight: CGFloat = 14
+            
+            // Row 1 (Top: Metadata & PiP badge): y = bounds.height - 34
+            let row1Y = bounds.height - 34
+            let iconSize: CGFloat = 26
+            badgeContainer.frame = NSRect(x: padLeft, y: row1Y - 2, width: iconSize, height: iconSize)
+            badgeContainer.layer?.cornerRadius = 13
+            equalizerView.frame = NSRect(x: 2, y: 5, width: 22, height: 16)
+            
+            pipBadge.sizeToFit()
+            let badgeW = pipBadge.frame.width + 6
+            pipBadge.frame = NSRect(x: bounds.width - padRight - badgeW, y: row1Y + 3, width: badgeW, height: 14)
+            
+            let textLeft = badgeContainer.frame.maxX + 8
+            let textWidth = max(50, pipBadge.frame.minX - textLeft - 6)
+            titleLabel.frame = NSRect(x: textLeft, y: row1Y + 12, width: textWidth, height: 16)
+            artistLabel.frame = NSRect(x: textLeft, y: row1Y - 2, width: max(40, textWidth - 55), height: 14)
+            browserBadge.frame = NSRect(x: textLeft + max(40, textWidth - 55) + 4, y: row1Y - 2, width: 45, height: 13)
+            
+            // Row 2 (Middle: Scrubber): y = row1Y - 32
+            let scrubberY = row1Y - 32
+            currentTimeLabel.frame = NSRect(x: padLeft, y: scrubberY, width: 34, height: 14)
+            durationLabel.frame = NSRect(x: bounds.width - padRight - 34, y: scrubberY, width: 34, height: 14)
+            let sliderX = currentTimeLabel.frame.maxX + 4
+            let sliderW = durationLabel.frame.minX - 4 - sliderX
+            scrubberSlider.frame = NSRect(x: sliderX, y: scrubberY - 2, width: max(40, sliderW), height: 16)
+            
+            // Row 3 (Bottom: Transport & Volume): y = 10
+            let transY: CGFloat = 10
+            let btnSize: CGFloat = 24
+            let spacing: CGFloat = 4
+            
+            skipBackButton.frame = NSRect(x: padLeft, y: transY, width: btnSize, height: btnSize)
+            playPauseButton.frame = NSRect(x: skipBackButton.frame.maxX + spacing, y: transY - 1, width: btnSize + 2, height: btnSize + 2)
+            skipForwardButton.frame = NSRect(x: playPauseButton.frame.maxX + spacing, y: transY, width: btnSize, height: btnSize)
+            
+            volumeButton.frame = NSRect(x: skipForwardButton.frame.maxX + 8, y: transY, width: btnSize, height: btnSize)
+            let maxVolWidth: CGFloat = min(60, max(28, bounds.width - 240))
+            volumeSlider.frame = NSRect(x: volumeButton.frame.maxX + 4, y: transY + 2, width: maxVolWidth, height: 18)
+            
+            closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
+            openButton.frame = NSRect(x: closeButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            copyButton.frame = NSRect(x: openButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            pinButton.frame = NSRect(x: copyButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+        } else if hasVideo {
+            // Full 16:9 Video Preview + Controls Layout (Height: 14 + videoH + 104)
+            pipBadge.isHidden = true
             videoPlayerView.isHidden = false
             scrubberSlider.isHidden = false
             currentTimeLabel.isHidden = false
@@ -524,6 +613,7 @@ public final class FloatingPillView: NSView {
             browserBadge.frame = NSRect(x: textLeft + max(40, textWidth - 55) + 4, y: metaY, width: 45, height: 13)
         } else {
             // Compact Audio Mode Layout (Height: 56)
+            pipBadge.isHidden = true
             videoPlayerView.isHidden = true
             scrubberSlider.isHidden = true
             currentTimeLabel.isHidden = true
@@ -541,14 +631,14 @@ public final class FloatingPillView: NSView {
             badgeContainer.layer?.cornerRadius = 18
             equalizerView.frame = NSRect(x: 7, y: 10, width: 22, height: 16)
             
-            let buttonSize: CGFloat = 26
             let btnSpacing: CGFloat = 6
+            let btnSize: CGFloat = 26
             
-            closeButton.frame = NSRect(x: bounds.width - paddingRight - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            closeButton.frame = NSRect(x: bounds.width - paddingRight - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
+            openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
+            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
+            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
+            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
             
             let textLeft = badgeContainer.frame.maxX + 10
             let textRight = pinButton.frame.minX - 10
@@ -620,6 +710,9 @@ public final class FloatingPillView: NSView {
     public func calculateFittingSize() -> NSSize {
         let width = max(260, min(650, preferredPanelWidth))
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
+        if isNativePiPActive {
+            return NSSize(width: width, height: 114)
+        }
         if hasVideo {
             let padLeft: CGFloat = 18
             let padRight: CGFloat = 14

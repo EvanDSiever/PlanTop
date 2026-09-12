@@ -32,6 +32,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let pipCheckbox = NSButton(checkboxWithTitle: "📺 Enable Picture-in-Picture mode when switching away from tab", target: nil, action: nil)
     private let pipAudioCheckbox = NSButton(checkboxWithTitle: "🔊 Transfer sound to side panel in Picture-in-Picture mode", target: nil, action: nil)
     private let pipSyncBackCheckbox = NSButton(checkboxWithTitle: "🔄 Sync watching progress back to webpage when returning to tab", target: nil, action: nil)
+    private let nativePiPCompanionCheckbox = NSButton(checkboxWithTitle: "🎛️ Auto-dock companion controls when browser PiP is active", target: nil, action: nil)
     private let pinCheckbox = NSButton(checkboxWithTitle: "📌 Pin side panel on screen permanently", target: nil, action: nil)
     private let panelWidthSlider = NSSlider(value: 340, minValue: 260, maxValue: 650, target: nil, action: nil)
     private let panelWidthValueLabel = NSTextField(labelWithString: "340 px")
@@ -302,33 +303,38 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         currentY += 94 + 14
         
         // 6. Live Video Playback & Picture-in-Picture Card
-        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 215))
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 240))
         container.addSubview(videoCard)
         
         let videoTitle = NSTextField(labelWithString: "Live Video Playback & Picture-in-Picture (PiP)")
         videoTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        videoTitle.frame = NSRect(x: 14, y: 188, width: 380, height: 16)
+        videoTitle.frame = NSRect(x: 14, y: 212, width: 380, height: 16)
         videoCard.addSubview(videoTitle)
         
-        videoPreviewCheckbox.frame = NSRect(x: 14, y: 162, width: 450, height: 18)
+        videoPreviewCheckbox.frame = NSRect(x: 14, y: 186, width: 450, height: 18)
         videoPreviewCheckbox.target = self
         videoPreviewCheckbox.action = #selector(videoPreviewToggled)
         videoCard.addSubview(videoPreviewCheckbox)
         
-        pipCheckbox.frame = NSRect(x: 14, y: 138, width: 450, height: 18)
+        pipCheckbox.frame = NSRect(x: 14, y: 162, width: 450, height: 18)
         pipCheckbox.target = self
         pipCheckbox.action = #selector(pipCheckboxToggled)
         videoCard.addSubview(pipCheckbox)
         
-        pipAudioCheckbox.frame = NSRect(x: 14, y: 114, width: 450, height: 18)
+        pipAudioCheckbox.frame = NSRect(x: 14, y: 138, width: 450, height: 18)
         pipAudioCheckbox.target = self
         pipAudioCheckbox.action = #selector(pipAudioCheckboxToggled)
         videoCard.addSubview(pipAudioCheckbox)
         
-        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 90, width: 450, height: 18)
+        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 114, width: 450, height: 18)
         pipSyncBackCheckbox.target = self
         pipSyncBackCheckbox.action = #selector(pipSyncBackCheckboxToggled)
         videoCard.addSubview(pipSyncBackCheckbox)
+        
+        nativePiPCompanionCheckbox.frame = NSRect(x: 14, y: 90, width: 450, height: 18)
+        nativePiPCompanionCheckbox.target = self
+        nativePiPCompanionCheckbox.action = #selector(nativePiPCompanionToggled)
+        videoCard.addSubview(nativePiPCompanionCheckbox)
         
         pinCheckbox.frame = NSRect(x: 14, y: 64, width: 450, height: 18)
         pinCheckbox.target = self
@@ -357,7 +363,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         dragTip.frame = NSRect(x: 14, y: 8, width: 450, height: 14)
         videoCard.addSubview(dragTip)
         
-        currentY += 215 + 14
+        currentY += 240 + 14
         
         // 7. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 54))
@@ -445,6 +451,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         pipCheckbox.state = pillController.isPiPEnabled ? .on : .off
         pipAudioCheckbox.state = pillController.isPiPAudioTransferEnabled ? .on : .off
         pipSyncBackCheckbox.state = pillController.isPiPSyncProgressEnabled ? .on : .off
+        nativePiPCompanionCheckbox.state = pillController.isNativePiPCompanionEnabled ? .on : .off
         pinCheckbox.state = pillController.isPinned ? .on : .off
         
         panelWidthSlider.doubleValue = Double(pillController.customPanelWidth)
@@ -516,6 +523,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func pipSyncBackCheckboxToggled() {
         pillController.isPiPSyncProgressEnabled = (pipSyncBackCheckbox.state == .on)
+    }
+    
+    @objc private func nativePiPCompanionToggled() {
+        pillController.isNativePiPCompanionEnabled = (nativePiPCompanionCheckbox.state == .on)
     }
     
     @objc private func pinCheckboxToggled() {

@@ -143,6 +143,15 @@ public final class FloatingPillWindowController: NSObject {
     public private(set) var isPiPActive: Bool = false
     private var pipTimer: Timer?
     
+    // Native PiP Companion Dock
+    public var isNativePiPCompanionEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isNativePiPCompanionEnabled, forKey: "isNativePiPCompanionEnabled")
+            handleNativePiPStateChanged()
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    
     public func togglePin() {
         isPinned.toggle()
         if !isPinned && !isHoveringActive {
@@ -256,6 +265,9 @@ public final class FloatingPillWindowController: NSObject {
         if UserDefaults.standard.object(forKey: "isPiPSyncProgressEnabled") != nil {
             self.isPiPSyncProgressEnabled = UserDefaults.standard.bool(forKey: "isPiPSyncProgressEnabled")
         }
+        if UserDefaults.standard.object(forKey: "isNativePiPCompanionEnabled") != nil {
+            self.isNativePiPCompanionEnabled = UserDefaults.standard.bool(forKey: "isNativePiPCompanionEnabled")
+        }
         
         startMouseTracking()
         startPiPTimer()
@@ -266,6 +278,12 @@ public final class FloatingPillWindowController: NSObject {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onNativePiPChanged),
+            name: .songTopNativePiPChanged,
+            object: nil
+        )
     }
     
     deinit {
@@ -274,6 +292,37 @@ public final class FloatingPillWindowController: NSObject {
         retractTimer?.invalidate()
         guideHideTimer?.invalidate()
         pipTimer?.invalidate()
+    }
+    
+    @objc private func onNativePiPChanged() {
+        DispatchQueue.main.async { [weak self] in
+            self?.handleNativePiPStateChanged()
+        }
+    }
+    
+    private func handleNativePiPStateChanged() {
+        let isPiP = detector.isNativePiPActive
+        pillView?.isNativePiPActive = (isPiP && isNativePiPCompanionEnabled)
+        
+        if isPiP && isNativePiPCompanionEnabled {
+            if !isDroppedDown {
+                dropDown()
+            } else {
+                repositionPanel()
+            }
+        } else {
+            if isDroppedDown {
+                repositionPanel()
+                if !isPinned && !isHoveringActive && hoverDropOnly {
+                    retractTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+                        guard let self = self else { return }
+                        if !self.isPinned && !self.isHoveringActive && !self.detector.isNativePiPActive {
+                            self.retract()
+                        }
+                    }
+                }
+            }
+        }
     }
     
     @objc private func screenParametersChanged() {
@@ -369,7 +418,7 @@ public final class FloatingPillWindowController: NSObject {
     
     private func checkMousePositionBackground() {
         guard isEnabled && hoverDropOnly else { return }
-        if isPinned || isPiPActive { return }
+        if isPinned || isPiPActive || (isNativePiPCompanionEnabled && detector.isNativePiPActive) { return }
         
         let mouse = NSEvent.mouseLocation
         
@@ -623,6 +672,8 @@ public final class FloatingPillWindowController: NSObject {
         let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: customPanelWidth, height: 56))
         pv.preferredPanelWidth = customPanelWidth
         pv.isPinned = isPinned
+        pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
+        pv.isVideoPreviewEnabled = isVideoPreviewEnabled
         pv.onOpenTab = { [weak self, weak detector, weak pv] in
             guard let self = self else { return }
             if let t = detector?.currentTrack {
@@ -631,14 +682,18 @@ public final class FloatingPillWindowController: NSObject {
             }
         }
         pv.onSeekRequested = { [weak self, weak detector] seconds in
-            guard let self = self else { return }
-            if self.isPiPSyncProgressEnabled, let t = detector?.currentTrack {
+            guard self != nil else { return }
+            if let t = detector?.currentTrack {
                 detector?.seekBrowser(track: t, toSeconds: seconds)
             }
         }
         pv.onTogglePlayPause = { [weak self, weak detector] in
             guard let self = self else { return }
-            if !self.isPiPActive {
+            if self.detector.isNativePiPActive {
+                if let t = detector?.currentTrack {
+                    detector?.togglePlayPause(track: t)
+                }
+            } else if !self.isPiPActive {
                 if let t = detector?.currentTrack {
                     detector?.togglePlayPause(track: t)
                 }
@@ -672,7 +727,7 @@ public final class FloatingPillWindowController: NSObject {
         }
         pv.onHoverStateChanged = { [weak self] isHovered in
             guard let self = self else { return }
-            if self.isPinned || self.isPiPActive { return }
+            if self.isPinned || self.isPiPActive || (self.isNativePiPCompanionEnabled && self.detector.isNativePiPActive) { return }
             if isHovered {
                 self.retractTimer?.invalidate()
                 self.retractTimer = nil
@@ -696,6 +751,7 @@ public final class FloatingPillWindowController: NSObject {
     
     private func updateContent(track: TrackInfo?) {
         let (panel, pv) = setupPillPanel()
+        pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
         pv.update(with: track)
         if isPiPActive && isPiPAudioTransferEnabled {
             pv.setPiPAudio(enabled: true)
@@ -713,6 +769,7 @@ public final class FloatingPillWindowController: NSObject {
         let (panel, pv) = setupPillPanel()
         
         pv.preferredPanelWidth = customPanelWidth
+        pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
         pv.update(with: detector.currentTrack)
         if isPiPActive && isPiPAudioTransferEnabled {
             pv.setPiPAudio(enabled: true)
@@ -745,7 +802,7 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     public func retract(immediately: Bool = false) {
-        if (isPinned || isPiPActive) && !immediately {
+        if (isPinned || isPiPActive || (isNativePiPCompanionEnabled && detector.isNativePiPActive)) && !immediately {
             return
         }
         guard let panel = pillPanel, let pv = pillView, isDroppedDown || panel.isVisible else { return }

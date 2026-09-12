@@ -1,9 +1,15 @@
 import Foundation
 import AppKit
 
+extension Notification.Name {
+    public static let songTopNativePiPChanged = Notification.Name("com.songtop.nativePiPChanged")
+}
+
 public final class YouTubeDetector: ObservableObject {
     @Published public private(set) var currentTrack: TrackInfo?
     @Published public private(set) var isDetecting: Bool = false
+    @Published public private(set) var isNativePiPActive: Bool = false
+    @Published public private(set) var nativePiPBounds: CGRect?
     
     private var timer: Timer?
     private let queue = DispatchQueue(label: "com.songtop.detector", qos: .background)
@@ -31,19 +37,46 @@ public final class YouTubeDetector: ObservableObject {
         isDetecting = false
     }
     
+    public static func checkNativePiPWindow() -> (isActive: Bool, bounds: CGRect?) {
+        guard let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
+            return (false, nil)
+        }
+        for w in list {
+            let name = w[kCGWindowName as String] as? String ?? ""
+            let layer = w[kCGWindowLayer as String] as? Int ?? 0
+            if (name == "Picture in Picture" || name == "Picture-in-Picture") && layer >= 3 {
+                if let boundsDict = w[kCGWindowBounds as String] as? [String: Any],
+                   let x = boundsDict["X"] as? Double,
+                   let y = boundsDict["Y"] as? Double,
+                   let width = boundsDict["Width"] as? Double,
+                   let height = boundsDict["Height"] as? Double {
+                    return (true, CGRect(x: x, y: y, width: width, height: height))
+                }
+                return (true, nil)
+            }
+        }
+        return (false, nil)
+    }
+    
     public func checkNow() {
+        let pipInfo = YouTubeDetector.checkNativePiPWindow()
         let detected = detectFromRunningBrowsers()
         
-        if Thread.isMainThread {
+        let updateBlock = {
+            if self.isNativePiPActive != pipInfo.isActive {
+                self.isNativePiPActive = pipInfo.isActive
+                self.nativePiPBounds = pipInfo.bounds
+                NotificationCenter.default.post(name: .songTopNativePiPChanged, object: nil)
+            }
             if self.currentTrack != detected {
                 self.currentTrack = detected
             }
+        }
+        
+        if Thread.isMainThread {
+            updateBlock()
         } else {
-            DispatchQueue.main.async {
-                if self.currentTrack != detected {
-                    self.currentTrack = detected
-                }
-            }
+            DispatchQueue.main.async(execute: updateBlock)
         }
     }
     
