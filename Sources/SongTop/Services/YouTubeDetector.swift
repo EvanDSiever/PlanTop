@@ -84,15 +84,129 @@ public final class YouTubeDetector: ObservableObject {
         return nil
     }
     
-    public func focusTab(track: TrackInfo) {
+    public func isUserActiveOnYouTubeTab() -> Bool {
+        guard let track = currentTrack else { return false }
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        guard let frontName = frontApp?.localizedName, frontName == track.browser else {
+            return false
+        }
+        
+        let targetId = track.youtubeVideoId ?? "youtube.com"
+        let scriptSource: String
+        if track.browser == "Safari" {
+            scriptSource = """
+            tell application "Safari"
+                try
+                    set aURL to URL of current tab of front window
+                    if aURL contains "\(targetId)" then
+                        return "ACTIVE"
+                    end if
+                end try
+                return "AWAY"
+            end tell
+            """
+        } else {
+            scriptSource = """
+            tell application "\(track.browser)"
+                try
+                    set aURL to URL of active tab of front window
+                    if aURL contains "\(targetId)" then
+                        return "ACTIVE"
+                    end if
+                end try
+                return "AWAY"
+            end tell
+            """
+        }
+        
+        if let script = NSAppleScript(source: scriptSource) {
+            var err: NSDictionary?
+            let result = script.executeAndReturnError(&err)
+            return result.stringValue == "ACTIVE"
+        }
+        return false
+    }
+    
+    public func seekBrowser(track: TrackInfo, toSeconds: Double) {
+        guard toSeconds >= 0 else { return }
+        let targetSecs = Int(toSeconds)
+        let targetId = track.youtubeVideoId ?? "youtube.com"
+        
+        var base = track.url
+        if let range = base.range(of: "&t=\\d+s?", options: .regularExpression) {
+            base.removeSubrange(range)
+        } else if let range = base.range(of: "\\?t=\\d+s?", options: .regularExpression) {
+            base.removeSubrange(range)
+        }
+        let separator = base.contains("?") ? "&" : "?"
+        let finalURL = "\(base)\(separator)t=\(targetSecs)s"
+        
+        let scriptSource: String
+        if track.browser == "Safari" {
+            scriptSource = """
+            tell application "Safari"
+                try
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if URL of t contains "\(targetId)" then
+                                set URL of t to "\(finalURL)"
+                                return true
+                            end if
+                        end repeat
+                    end repeat
+                end try
+            end tell
+            """
+        } else {
+            scriptSource = """
+            tell application "\(track.browser)"
+                try
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if URL of t contains "\(targetId)" then
+                                set URL of t to "\(finalURL)"
+                                return true
+                            end if
+                        end repeat
+                    end repeat
+                end try
+            end tell
+            """
+        }
+        
+        queue.async {
+            if let script = NSAppleScript(source: scriptSource) {
+                var err: NSDictionary?
+                script.executeAndReturnError(&err)
+            }
+        }
+    }
+    
+    public func focusTab(track: TrackInfo, atSeconds: Double? = nil) {
+        let targetId = track.youtubeVideoId ?? "youtube.com"
+        var targetURL = track.url
+        if let sec = atSeconds, sec > 1 {
+            var base = track.url
+            if let range = base.range(of: "&t=\\d+s?", options: .regularExpression) {
+                base.removeSubrange(range)
+            } else if let range = base.range(of: "\\?t=\\d+s?", options: .regularExpression) {
+                base.removeSubrange(range)
+            }
+            let separator = base.contains("?") ? "&" : "?"
+            targetURL = "\(base)\(separator)t=\(Int(sec))s"
+        }
+        
         let scriptSource: String
         if track.browser == "Safari" {
             scriptSource = """
             tell application "Safari"
                 repeat with w in windows
                     repeat with t in tabs of w
-                        if URL of t is "\(track.url)" then
+                        if URL of t contains "\(targetId)" then
                             set current tab of w to t
+                            if "\(targetURL)" is not "\(track.url)" then
+                                set URL of t to "\(targetURL)"
+                            end if
                             set index of w to 1
                             activate
                             return true
@@ -107,8 +221,11 @@ public final class YouTubeDetector: ObservableObject {
                 repeat with w in windows
                     set idx to 1
                     repeat with t in tabs of w
-                        if URL of t is "\(track.url)" then
+                        if URL of t contains "\(targetId)" then
                             set active tab index of w to idx
+                            if "\(targetURL)" is not "\(track.url)" then
+                                set URL of t to "\(targetURL)"
+                            end if
                             set index of w to 1
                             activate
                             return true

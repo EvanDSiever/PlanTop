@@ -28,7 +28,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let guideButton = NSButton(title: "🎯 Highlight Right Zone", target: nil, action: nil)
     
     // Video Preview & Sizing Controls
-    private let videoPreviewCheckbox = NSButton(checkboxWithTitle: "Show video playing in side panel when active (Muted by default)", target: nil, action: nil)
+    private let videoPreviewCheckbox = NSButton(checkboxWithTitle: "Show video playing in side panel when active", target: nil, action: nil)
+    private let pipCheckbox = NSButton(checkboxWithTitle: "📺 Enable Picture-in-Picture mode when switching away from tab", target: nil, action: nil)
+    private let pipAudioCheckbox = NSButton(checkboxWithTitle: "🔊 Transfer sound to side panel in Picture-in-Picture mode", target: nil, action: nil)
+    private let pipSyncBackCheckbox = NSButton(checkboxWithTitle: "🔄 Sync watching progress back to webpage when returning to tab", target: nil, action: nil)
     private let pinCheckbox = NSButton(checkboxWithTitle: "📌 Pin side panel on screen permanently", target: nil, action: nil)
     private let panelWidthSlider = NSSlider(value: 340, minValue: 260, maxValue: 650, target: nil, action: nil)
     private let panelWidthValueLabel = NSTextField(labelWithString: "340 px")
@@ -298,39 +301,54 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY += 94 + 14
         
-        // 6. Live Video Playback & Dynamic Sizing Card
-        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 140))
+        // 6. Live Video Playback & Picture-in-Picture Card
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 215))
         container.addSubview(videoCard)
         
-        let videoTitle = NSTextField(labelWithString: "Live Video Playback & Dynamic Sizing")
+        let videoTitle = NSTextField(labelWithString: "Live Video Playback & Picture-in-Picture (PiP)")
         videoTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        videoTitle.frame = NSRect(x: 14, y: 114, width: 320, height: 16)
+        videoTitle.frame = NSRect(x: 14, y: 188, width: 380, height: 16)
         videoCard.addSubview(videoTitle)
         
-        videoPreviewCheckbox.frame = NSRect(x: 14, y: 88, width: 450, height: 18)
+        videoPreviewCheckbox.frame = NSRect(x: 14, y: 162, width: 450, height: 18)
         videoPreviewCheckbox.target = self
         videoPreviewCheckbox.action = #selector(videoPreviewToggled)
         videoCard.addSubview(videoPreviewCheckbox)
         
-        pinCheckbox.frame = NSRect(x: 14, y: 62, width: 450, height: 18)
+        pipCheckbox.frame = NSRect(x: 14, y: 138, width: 450, height: 18)
+        pipCheckbox.target = self
+        pipCheckbox.action = #selector(pipCheckboxToggled)
+        videoCard.addSubview(pipCheckbox)
+        
+        pipAudioCheckbox.frame = NSRect(x: 14, y: 114, width: 450, height: 18)
+        pipAudioCheckbox.target = self
+        pipAudioCheckbox.action = #selector(pipAudioCheckboxToggled)
+        videoCard.addSubview(pipAudioCheckbox)
+        
+        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 90, width: 450, height: 18)
+        pipSyncBackCheckbox.target = self
+        pipSyncBackCheckbox.action = #selector(pipSyncBackCheckboxToggled)
+        videoCard.addSubview(pipSyncBackCheckbox)
+        
+        pinCheckbox.frame = NSRect(x: 14, y: 64, width: 450, height: 18)
         pinCheckbox.target = self
         pinCheckbox.action = #selector(pinCheckboxToggled)
         videoCard.addSubview(pinCheckbox)
         
         let pwLabel = NSTextField(labelWithString: "Panel Width:")
         pwLabel.font = NSFont.systemFont(ofSize: 11)
-        pwLabel.frame = NSRect(x: 14, y: 28, width: 85, height: 16)
+        pwLabel.frame = NSRect(x: 14, y: 30, width: 85, height: 16)
         videoCard.addSubview(pwLabel)
         
         panelWidthSlider.isContinuous = true
-        panelWidthSlider.frame = NSRect(x: 105, y: 26, width: 290, height: 20)
+        panelWidthSlider.frame = NSRect(x: 105, y: 28, width: 290, height: 20)
         panelWidthSlider.target = self
         panelWidthSlider.action = #selector(panelWidthSliderChanged)
         videoCard.addSubview(panelWidthSlider)
         
         panelWidthValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         panelWidthValueLabel.alignment = .right
-        panelWidthValueLabel.frame = NSRect(x: 400, y: 28, width: 65, height: 16)
+        panelWidthValueLabel.frame = NSRect(x: 400, y: 30, width: 65, height: 16)
         videoCard.addSubview(panelWidthValueLabel)
         
         let dragTip = NSTextField(labelWithString: "💡 Tip: You can also drag the left edge of the side panel to resize it interactively!")
@@ -339,7 +357,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         dragTip.frame = NSRect(x: 14, y: 8, width: 450, height: 14)
         videoCard.addSubview(dragTip)
         
-        currentY += 140 + 14
+        currentY += 215 + 14
         
         // 7. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 54))
@@ -424,6 +442,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         updateSensitivityLabel(delay: pillController.hoverDelay)
         
         videoPreviewCheckbox.state = pillController.isVideoPreviewEnabled ? .on : .off
+        pipCheckbox.state = pillController.isPiPEnabled ? .on : .off
+        pipAudioCheckbox.state = pillController.isPiPAudioTransferEnabled ? .on : .off
+        pipSyncBackCheckbox.state = pillController.isPiPSyncProgressEnabled ? .on : .off
         pinCheckbox.state = pillController.isPinned ? .on : .off
         
         panelWidthSlider.doubleValue = Double(pillController.customPanelWidth)
@@ -483,6 +504,18 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func videoPreviewToggled() {
         pillController.isVideoPreviewEnabled = (videoPreviewCheckbox.state == .on)
+    }
+    
+    @objc private func pipCheckboxToggled() {
+        pillController.isPiPEnabled = (pipCheckbox.state == .on)
+    }
+    
+    @objc private func pipAudioCheckboxToggled() {
+        pillController.isPiPAudioTransferEnabled = (pipAudioCheckbox.state == .on)
+    }
+    
+    @objc private func pipSyncBackCheckboxToggled() {
+        pillController.isPiPSyncProgressEnabled = (pipSyncBackCheckbox.state == .on)
     }
     
     @objc private func pinCheckboxToggled() {

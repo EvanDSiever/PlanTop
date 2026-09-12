@@ -43,10 +43,15 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     public private(set) var isMuted: Bool = true
     public private(set) var isPlaying: Bool = false
     public private(set) var isReady: Bool = false
+    public private(set) var currentTime: Double = 0.0
+    public private(set) var duration: Double = 0.0
+    public private(set) var volume: Int = 100
     private var shouldBePlaying: Bool = true
     
     public var onVideoClicked: (() -> Void)?
     public var onPlaybackStateChanged: ((Bool) -> Void)?
+    public var onProgressUpdated: ((Double, Double) -> Void)?
+    public var onVolumeChanged: ((Int, Bool) -> Void)?
     
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -158,13 +163,16 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         )
     }
     
-    public func loadVideo(id: String) {
+    public func loadVideo(id: String, startSeconds: Double = 0) {
         guard !id.isEmpty else {
             clearVideo()
             return
         }
         
         if currentVideoId == id && isReady {
+            if startSeconds > 0 && abs(currentTime - startSeconds) > 3 {
+                seekTo(seconds: startSeconds)
+            }
             if shouldBePlaying {
                 play()
             }
@@ -175,6 +183,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         isReady = false
         isPlaying = false
         shouldBePlaying = true
+        currentTime = startSeconds
+        duration = 0.0
         fallbackImageView.isHidden = true
         
         loadingIndicator.startAnimation(nil)
@@ -183,7 +193,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         
         loadFallbackThumbnail(id: id)
         
-        let html = generatePlayerHTML(videoId: id)
+        let html = generatePlayerHTML(videoId: id, startSeconds: startSeconds)
         webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube-nocookie.com"))
     }
     
@@ -191,6 +201,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         currentVideoId = nil
         isReady = false
         isPlaying = false
+        currentTime = 0.0
+        duration = 0.0
         loadingIndicator.stopAnimation(nil)
         loadingLabel.isHidden = true
         fallbackImageView.isHidden = true
@@ -222,11 +234,36 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         }
     }
     
-    public func toggleMute() {
-        isMuted.toggle()
+    public func seekTo(seconds: Double) {
+        let target = max(0, min(duration > 0 ? duration : 36000, seconds))
+        currentTime = target
+        guard isReady else { return }
+        webView.evaluateJavaScript("if (window.player && player.seekTo) { player.seekTo(\(target), true); }", completionHandler: nil)
+    }
+    
+    public func skip(by seconds: Double) {
+        seekTo(seconds: currentTime + seconds)
+    }
+    
+    public func setVolume(volume: Int) {
+        let clamped = max(0, min(100, volume))
+        self.volume = clamped
+        guard isReady else { return }
+        webView.evaluateJavaScript("if (window.player && player.setVolume) { player.setVolume(\(clamped)); }", completionHandler: nil)
+        onVolumeChanged?(clamped, isMuted)
+    }
+    
+    public func setMuted(_ muted: Bool) {
+        isMuted = muted
         updateMuteButtonIcon()
-        let js = isMuted ? "if (window.player && player.mute) player.mute();" : "if (window.player && player.unMute) player.unMute();"
+        guard isReady else { return }
+        let js = muted ? "if (window.player && player.mute) player.mute();" : "if (window.player && player.unMute) player.unMute();"
         webView.evaluateJavaScript(js, completionHandler: nil)
+        onVolumeChanged?(volume, isMuted)
+    }
+    
+    public func toggleMute() {
+        setMuted(!isMuted)
     }
     
     @objc private func handleMuteClicked() {
@@ -235,7 +272,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     
     private func updateMuteButtonIcon() {
         let symbolName = isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        let tooltip = isMuted ? "Preview Audio Muted (Click to Unmute)" : "Preview Audio Playing (Click to Mute)"
+        let tooltip = isMuted ? "Audio Muted (Click to Unmute)" : "Audio Playing (Click to Mute)"
         muteButton.toolTip = tooltip
         
         let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
@@ -282,6 +319,19 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
                 self.isPlaying = false
                 self.shouldBePlaying = false
                 self.onPlaybackStateChanged?(false)
+            } else if message.hasPrefix("progress_") {
+                // Format: progress_CURRENT_DURATION_VOLUME_MUTED
+                let parts = message.dropFirst("progress_".count).split(separator: "_")
+                if parts.count >= 4 {
+                    if let cur = Double(parts[0]), let dur = Double(parts[1]), let vol = Int(parts[2]), let muted = Int(parts[3]) {
+                        self.currentTime = cur
+                        if dur > 0 { self.duration = dur }
+                        self.volume = vol
+                        self.isMuted = (muted == 1)
+                        self.updateMuteButtonIcon()
+                        self.onProgressUpdated?(cur, self.duration)
+                    }
+                }
             } else if message.hasPrefix("error_") {
                 // Video embedding restricted by copyright holder (e.g. error 150/101)
                 self.loadingIndicator.stopAnimation(nil)
@@ -291,7 +341,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         }
     }
     
-    private func generatePlayerHTML(videoId: String) -> String {
+    private func generatePlayerHTML(videoId: String, startSeconds: Double = 0) -> String {
+        let startVal = max(0, Int(startSeconds))
         return """
         <!DOCTYPE html>
         <html>
@@ -308,6 +359,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         <script src="https://www.youtube.com/iframe_api"></script>
         <script>
         var player;
+        var progressInterval = null;
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('player', {
             videoId: '\(videoId)',
@@ -317,6 +369,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
               'controls': 0,
               'playsinline': 1,
               'loop': 1,
+              'start': \(startVal),
               'playlist': '\(videoId)',
               'disablekb': 1,
               'fs': 0,
@@ -329,7 +382,24 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
               'onReady': function(e) {
                 window.webkit.messageHandlers.playerBridge.postMessage("ready");
                 e.target.mute();
+                if (\(startVal) > 0) {
+                  try { e.target.seekTo(\(startVal), true); } catch(err) {}
+                }
                 e.target.playVideo();
+                
+                if (!progressInterval) {
+                  progressInterval = setInterval(function() {
+                    if (player && player.getCurrentTime) {
+                      try {
+                        var cur = player.getCurrentTime() || 0;
+                        var dur = player.getDuration() || 0;
+                        var vol = player.getVolume ? player.getVolume() : 100;
+                        var muted = player.isMuted ? (player.isMuted() ? 1 : 0) : 1;
+                        window.webkit.messageHandlers.playerBridge.postMessage("progress_" + cur.toFixed(1) + "_" + dur.toFixed(1) + "_" + vol + "_" + muted);
+                      } catch(err) {}
+                    }
+                  }, 250);
+                }
               },
               'onStateChange': function(e) {
                 window.webkit.messageHandlers.playerBridge.postMessage("state_" + e.data);

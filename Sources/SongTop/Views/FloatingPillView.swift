@@ -39,6 +39,20 @@ public final class FloatingPillView: NSView {
         }
     }
     
+    // Playhead Scrubber Controls
+    private let scrubberSlider = NSSlider(value: 0, minValue: 0, maxValue: 100, target: nil, action: nil)
+    private let currentTimeLabel = NSTextField(labelWithString: "00:00")
+    private let durationLabel = NSTextField(labelWithString: "00:00")
+    private var isUserScrubbing: Bool = false
+    public var onSeekRequested: ((Double) -> Void)?
+    
+    // Transport & Audio Controls
+    private let skipBackButton = NSButton()
+    private let skipForwardButton = NSButton()
+    private let volumeButton = NSButton()
+    private let volumeSlider = NSSlider(value: 100, minValue: 0, maxValue: 100, target: nil, action: nil)
+    private var seekDebounceTimer: Timer?
+    
     // Dynamic Drag-Scaling Support
     public var preferredPanelWidth: CGFloat = 340
     public var onResizeWidthChanged: ((CGFloat) -> Void)?
@@ -76,6 +90,14 @@ public final class FloatingPillView: NSView {
     
     private var currentTrack: TrackInfo?
     
+    public var currentTime: Double {
+        return videoPlayerView.currentTime
+    }
+    
+    public var duration: Double {
+        return videoPlayerView.duration
+    }
+    
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupViews()
@@ -101,7 +123,6 @@ public final class FloatingPillView: NSView {
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
         visualEffectView.layer?.cornerRadius = 18
-        // Masked corners: rounded on the left side, flush on the right screen bezel
         visualEffectView.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         visualEffectView.layer?.masksToBounds = true
         visualEffectView.layer?.borderWidth = 1.2
@@ -148,11 +169,62 @@ public final class FloatingPillView: NSView {
         videoPlayerView.onPlaybackStateChanged = { [weak self] isPlaying in
             self?.updatePlayPauseState(isPlaying: isPlaying)
         }
+        videoPlayerView.onProgressUpdated = { [weak self] cur, dur in
+            self?.handlePlayerProgress(cur: cur, dur: dur)
+        }
+        videoPlayerView.onVolumeChanged = { [weak self] vol, isMuted in
+            self?.updateVolumeUI(vol: vol, isMuted: isMuted)
+        }
         visualEffectView.addSubview(videoPlayerView)
+        
+        // Scrubber / Timeline Bar
+        scrubberSlider.isContinuous = true
+        scrubberSlider.target = self
+        scrubberSlider.action = #selector(handleScrubberChanged)
+        visualEffectView.addSubview(scrubberSlider)
+        
+        currentTimeLabel.isBezeled = false
+        currentTimeLabel.drawsBackground = false
+        currentTimeLabel.isEditable = false
+        currentTimeLabel.isSelectable = false
+        currentTimeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        currentTimeLabel.textColor = NSColor(white: 1.0, alpha: 0.8)
+        visualEffectView.addSubview(currentTimeLabel)
+        
+        durationLabel.isBezeled = false
+        durationLabel.drawsBackground = false
+        durationLabel.isEditable = false
+        durationLabel.isSelectable = false
+        durationLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        durationLabel.textColor = NSColor(white: 1.0, alpha: 0.55)
+        durationLabel.alignment = .right
+        visualEffectView.addSubview(durationLabel)
+        
+        // Skip Buttons
+        configureIconButton(skipBackButton, symbol: "gobackward.10", tooltip: "Skip Back 10 Seconds")
+        skipBackButton.target = self
+        skipBackButton.action = #selector(handleSkipBack)
+        visualEffectView.addSubview(skipBackButton)
+        
+        configureIconButton(skipForwardButton, symbol: "goforward.10", tooltip: "Skip Forward 10 Seconds")
+        skipForwardButton.target = self
+        skipForwardButton.action = #selector(handleSkipForward)
+        visualEffectView.addSubview(skipForwardButton)
+        
+        // Volume Control
+        configureIconButton(volumeButton, symbol: "speaker.wave.2.fill", tooltip: "Toggle Audio Mute")
+        volumeButton.target = self
+        volumeButton.action = #selector(handleVolumeButton)
+        visualEffectView.addSubview(volumeButton)
+        
+        volumeSlider.isContinuous = true
+        volumeSlider.target = self
+        volumeSlider.action = #selector(handleVolumeSliderChanged)
+        visualEffectView.addSubview(volumeSlider)
         
         // Red Icon Circle
         badgeContainer.wantsLayer = true
-        badgeContainer.layer?.cornerRadius = 18
+        badgeContainer.layer?.cornerRadius = 13
         badgeContainer.layer?.backgroundColor = NSColor(red: 0.92, green: 0.1, blue: 0.14, alpha: 1.0).cgColor
         badgeContainer.layer?.shadowColor = NSColor.red.cgColor
         badgeContainer.layer?.shadowOpacity = 0.5
@@ -161,7 +233,7 @@ public final class FloatingPillView: NSView {
         visualEffectView.addSubview(badgeContainer)
         
         // Equalizer in Icon Circle
-        equalizerView.frame = NSRect(x: 7, y: 10, width: 22, height: 16)
+        equalizerView.frame = NSRect(x: 2, y: 5, width: 22, height: 16)
         badgeContainer.addSubview(equalizerView)
         equalizerView.startAnimating()
         
@@ -170,7 +242,7 @@ public final class FloatingPillView: NSView {
         titleLabel.drawsBackground = false
         titleLabel.isEditable = false
         titleLabel.isSelectable = false
-        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         titleLabel.textColor = .white
         titleLabel.lineBreakMode = .byTruncatingTail
         visualEffectView.addSubview(titleLabel)
@@ -194,7 +266,7 @@ public final class FloatingPillView: NSView {
         artistLabel.drawsBackground = false
         artistLabel.isEditable = false
         artistLabel.isSelectable = false
-        artistLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        artistLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
         artistLabel.textColor = NSColor(white: 1.0, alpha: 0.72)
         artistLabel.lineBreakMode = .byTruncatingTail
         visualEffectView.addSubview(artistLabel)
@@ -234,14 +306,13 @@ public final class FloatingPillView: NSView {
     // Left Edge Drag-Resize Cursor Support
     public override func resetCursorRects() {
         super.resetCursorRects()
-        // Left 16px interactive resize region
-        let resizeRect = NSRect(x: 0, y: 0, width: 16, height: bounds.height)
+        let resizeRect = NSRect(x: 0, y: 0, width: 18, height: bounds.height)
         addCursorRect(resizeRect, cursor: .resizeLeftRight)
     }
     
     public override func mouseDown(with event: NSEvent) {
         let localPoint = convert(event.locationInWindow, from: nil)
-        if localPoint.x <= 16 {
+        if localPoint.x <= 18 {
             isDraggingResize = true
             dragStartMouseX = NSEvent.mouseLocation.x
             dragStartWidth = bounds.width
@@ -253,7 +324,6 @@ public final class FloatingPillView: NSView {
     public override func mouseDragged(with event: NSEvent) {
         if isDraggingResize {
             let currentMouseX = NSEvent.mouseLocation.x
-            // Dragging to the left (decreasing X) increases width into the screen
             let delta = dragStartMouseX - currentMouseX
             let targetWidth = max(260, min(650, dragStartWidth + delta))
             preferredPanelWidth = targetWidth
@@ -300,7 +370,7 @@ public final class FloatingPillView: NSView {
     private func configureIconButton(_ button: NSButton, symbol: String, tooltip: String) {
         button.isBordered = false
         button.wantsLayer = true
-        button.layer?.cornerRadius = 13
+        button.layer?.cornerRadius = 12
         button.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.14).cgColor
         button.toolTip = tooltip
         
@@ -349,7 +419,7 @@ public final class FloatingPillView: NSView {
             
             if hasVideo, let vid = track.youtubeVideoId {
                 videoPlayerView.isHidden = false
-                videoPlayerView.loadVideo(id: vid)
+                videoPlayerView.loadVideo(id: vid, startSeconds: track.startSeconds ?? 0)
                 if isStretchedOut {
                     videoPlayerView.play()
                 }
@@ -361,11 +431,15 @@ public final class FloatingPillView: NSView {
             titleLabel.stringValue = "No YouTube Audio Playing"
             artistLabel.stringValue = "Play music in Chrome, Safari, Brave, or Arc"
             browserBadge.isHidden = true
+            currentTimeLabel.stringValue = "00:00"
+            durationLabel.stringValue = "00:00"
+            scrubberSlider.doubleValue = 0
             
             badgeContainer.layer?.backgroundColor = NSColor(white: 0.25, alpha: 1.0).cgColor
             equalizerView.stopAnimating()
             copyButton.isHidden = true
             playPauseButton.isHidden = true
+            updatePlayPauseState(isPlaying: false)
             openButton.toolTip = "Open YouTube"
             
             videoPlayerView.isHidden = true
@@ -386,14 +460,21 @@ public final class FloatingPillView: NSView {
         }
         
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
-        
-        let gripHeight: CGFloat = hasVideo ? 44 : 28
+        let gripHeight: CGFloat = hasVideo ? 50 : 28
         resizeHandle.frame = NSRect(x: 0, y: 0, width: 18, height: bounds.height)
         gripBar.frame = NSRect(x: 5, y: (bounds.height - gripHeight) / 2, width: 3.5, height: gripHeight)
         window?.invalidateCursorRects(for: resizeHandle)
         
         if hasVideo {
-            // Video Mode Layout (dynamic width x proportional 16:9 height)
+            // Show video, scrubber, and transport controls
+            videoPlayerView.isHidden = false
+            scrubberSlider.isHidden = false
+            currentTimeLabel.isHidden = false
+            durationLabel.isHidden = false
+            skipBackButton.isHidden = false
+            skipForwardButton.isHidden = false
+            volumeButton.isHidden = false
+            volumeSlider.isHidden = false
             
             let padLeft: CGFloat = 18
             let padRight: CGFloat = 14
@@ -401,33 +482,56 @@ public final class FloatingPillView: NSView {
             let videoH = videoW * 9.0 / 16.0
             let videoY = bounds.height - 14 - videoH
             videoPlayerView.frame = NSRect(x: padLeft, y: videoY, width: videoW, height: videoH)
-            videoPlayerView.isHidden = false
             
-            // Bottom control bar area (height = videoY)
-            let iconSize: CGFloat = 30
-            badgeContainer.frame = NSRect(x: padLeft, y: (videoY - iconSize) / 2, width: iconSize, height: iconSize)
-            badgeContainer.layer?.cornerRadius = 15
-            equalizerView.frame = NSRect(x: 4, y: 7, width: 22, height: 16)
+            // 1. Scrubber Row (Timeline): y = videoY - 22
+            let scrubberY = videoY - 22
+            currentTimeLabel.frame = NSRect(x: padLeft, y: scrubberY, width: 34, height: 14)
+            durationLabel.frame = NSRect(x: bounds.width - padRight - 34, y: scrubberY, width: 34, height: 14)
+            let sliderX = currentTimeLabel.frame.maxX + 4
+            let sliderW = durationLabel.frame.minX - 4 - sliderX
+            scrubberSlider.frame = NSRect(x: sliderX, y: scrubberY - 2, width: max(40, sliderW), height: 16)
             
+            // 2. Transport & Volume Row: y = scrubberY - 30
+            let transY = scrubberY - 30
             let btnSize: CGFloat = 24
-            let btnSpacing: CGFloat = 5
+            let spacing: CGFloat = 4
             
-            closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
-            openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
-            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
-            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
-            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
+            skipBackButton.frame = NSRect(x: padLeft, y: transY, width: btnSize, height: btnSize)
+            playPauseButton.frame = NSRect(x: skipBackButton.frame.maxX + spacing, y: transY - 1, width: btnSize + 2, height: btnSize + 2)
+            skipForwardButton.frame = NSRect(x: playPauseButton.frame.maxX + spacing, y: transY, width: btnSize, height: btnSize)
+            
+            volumeButton.frame = NSRect(x: skipForwardButton.frame.maxX + 8, y: transY, width: btnSize, height: btnSize)
+            let maxVolWidth: CGFloat = min(60, max(28, bounds.width - 240))
+            volumeSlider.frame = NSRect(x: volumeButton.frame.maxX + 4, y: transY + 2, width: maxVolWidth, height: 18)
+            
+            // Right edge action buttons on transport row
+            closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
+            openButton.frame = NSRect(x: closeButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            copyButton.frame = NSRect(x: openButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            pinButton.frame = NSRect(x: copyButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            
+            // 3. Metadata row: bottom area (y: 6 to transY - 4)
+            let metaY: CGFloat = 8
+            let iconSize: CGFloat = 26
+            badgeContainer.frame = NSRect(x: padLeft, y: metaY, width: iconSize, height: iconSize)
+            badgeContainer.layer?.cornerRadius = 13
+            equalizerView.frame = NSRect(x: 2, y: 5, width: 22, height: 16)
             
             let textLeft = badgeContainer.frame.maxX + 8
-            let textRight = pinButton.frame.minX - 8
-            let textWidth = max(50, textRight - textLeft)
-            
-            titleLabel.frame = NSRect(x: textLeft, y: (videoY / 2) + 1, width: textWidth, height: 16)
-            artistLabel.frame = NSRect(x: textLeft, y: (videoY / 2) - 16, width: max(30, textWidth - 45), height: 14)
-            browserBadge.frame = NSRect(x: textLeft + max(30, textWidth - 45) + 4, y: (videoY / 2) - 15, width: 40, height: 13)
+            let textWidth = max(50, bounds.width - textLeft - padRight)
+            titleLabel.frame = NSRect(x: textLeft, y: metaY + 12, width: textWidth, height: 16)
+            artistLabel.frame = NSRect(x: textLeft, y: metaY - 1, width: max(40, textWidth - 55), height: 14)
+            browserBadge.frame = NSRect(x: textLeft + max(40, textWidth - 55) + 4, y: metaY, width: 45, height: 13)
         } else {
             // Compact Audio Mode Layout (Height: 56)
             videoPlayerView.isHidden = true
+            scrubberSlider.isHidden = true
+            currentTimeLabel.isHidden = true
+            durationLabel.isHidden = true
+            skipBackButton.isHidden = true
+            skipForwardButton.isHidden = true
+            volumeButton.isHidden = true
+            volumeSlider.isHidden = true
             
             let paddingLeft: CGFloat = 16
             let paddingRight: CGFloat = 12
@@ -503,6 +607,16 @@ public final class FloatingPillView: NSView {
         videoPlayerView.pause()
     }
     
+    public func seekTo(seconds: Double) {
+        videoPlayerView.seekTo(seconds: seconds)
+        currentTimeLabel.stringValue = formatTime(seconds)
+        scrubberSlider.doubleValue = seconds
+    }
+    
+    public func setPiPAudio(enabled: Bool) {
+        videoPlayerView.setMuted(!enabled)
+    }
+    
     public func calculateFittingSize() -> NSSize {
         let width = max(260, min(650, preferredPanelWidth))
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
@@ -511,7 +625,7 @@ public final class FloatingPillView: NSView {
             let padRight: CGFloat = 14
             let videoW = width - padLeft - padRight
             let videoH = videoW * 9.0 / 16.0
-            let bottomBarHeight: CGFloat = 73
+            let bottomBarHeight: CGFloat = 104
             let topPadding: CGFloat = 14
             let height = topPadding + videoH + bottomBarHeight
             return NSSize(width: width, height: height)
@@ -529,6 +643,78 @@ public final class FloatingPillView: NSView {
         return NSSize(width: max(width, max(380, totalWidth)), height: 56)
     }
     
+    @objc private func handleScrubberChanged() {
+        let val = scrubberSlider.doubleValue
+        currentTimeLabel.stringValue = formatTime(val)
+        videoPlayerView.seekTo(seconds: val)
+        seekDebounceTimer?.invalidate()
+        seekDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            self?.onSeekRequested?(val)
+        }
+    }
+    
+    @objc private func handleSkipBack() {
+        videoPlayerView.skip(by: -10)
+        let newTime = videoPlayerView.currentTime
+        currentTimeLabel.stringValue = formatTime(newTime)
+        scrubberSlider.doubleValue = newTime
+        seekDebounceTimer?.invalidate()
+        seekDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
+            self?.onSeekRequested?(newTime)
+        }
+    }
+    
+    @objc private func handleSkipForward() {
+        videoPlayerView.skip(by: 10)
+        let newTime = videoPlayerView.currentTime
+        currentTimeLabel.stringValue = formatTime(newTime)
+        scrubberSlider.doubleValue = newTime
+        seekDebounceTimer?.invalidate()
+        seekDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
+            self?.onSeekRequested?(newTime)
+        }
+    }
+    
+    @objc private func handleVolumeButton() {
+        videoPlayerView.toggleMute()
+    }
+    
+    @objc private func handleVolumeSliderChanged() {
+        let vol = Int(volumeSlider.doubleValue)
+        videoPlayerView.setVolume(volume: vol)
+        if videoPlayerView.isMuted && vol > 0 {
+            videoPlayerView.setMuted(false)
+        }
+    }
+    
+    private func handlePlayerProgress(cur: Double, dur: Double) {
+        if !isUserScrubbing {
+            currentTimeLabel.stringValue = formatTime(cur)
+            if dur > 0 {
+                durationLabel.stringValue = formatTime(dur)
+                scrubberSlider.maxValue = dur
+                scrubberSlider.doubleValue = cur
+            }
+        }
+    }
+    
+    private func updateVolumeUI(vol: Int, isMuted: Bool) {
+        volumeSlider.doubleValue = Double(vol)
+        let sym = isMuted || vol == 0 ? "speaker.slash.fill" : (vol < 50 ? "speaker.wave.1.fill" : "speaker.wave.2.fill")
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        if let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+            volumeButton.image = img
+            volumeButton.contentTintColor = isMuted ? NSColor(white: 0.6, alpha: 1.0) : .white
+        }
+    }
+    
+    private func formatTime(_ seconds: Double) -> String {
+        let s = Int(max(0, seconds))
+        let mins = s / 60
+        let secs = s % 60
+        return String(format: "%02d:%02d", mins, secs)
+    }
+    
     @objc private func handleOpen() {
         if currentTrack != nil {
             onOpenTab?()
@@ -544,8 +730,7 @@ public final class FloatingPillView: NSView {
     }
     
     public func togglePlayPause() {
-        let currentlyPlaying = videoPlayerView.isPlaying
-        let willPlay = !currentlyPlaying
+        let willPlay = !videoPlayerView.isPlaying
         if willPlay {
             videoPlayerView.play()
         } else {

@@ -115,6 +115,34 @@ public final class FloatingPillWindowController: NSObject {
         }
     }
     
+    // YouTube Picture-in-Picture (PiP) Mode
+    public var isPiPEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isPiPEnabled, forKey: "isPiPEnabled")
+            if !isPiPEnabled && isPiPActive {
+                exitPiPMode()
+            }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    public var isPiPAudioTransferEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isPiPAudioTransferEnabled, forKey: "isPiPAudioTransferEnabled")
+            if isPiPActive {
+                pillView?.setPiPAudio(enabled: isPiPAudioTransferEnabled)
+            }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    public var isPiPSyncProgressEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isPiPSyncProgressEnabled, forKey: "isPiPSyncProgressEnabled")
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    public private(set) var isPiPActive: Bool = false
+    private var pipTimer: Timer?
+    
     public func togglePin() {
         isPinned.toggle()
         if !isPinned && !isHoveringActive {
@@ -219,8 +247,18 @@ public final class FloatingPillWindowController: NSObject {
         if UserDefaults.standard.object(forKey: "autoPeekEnabled") != nil {
             self.autoPeekEnabled = UserDefaults.standard.bool(forKey: "autoPeekEnabled")
         }
+        if UserDefaults.standard.object(forKey: "isPiPEnabled") != nil {
+            self.isPiPEnabled = UserDefaults.standard.bool(forKey: "isPiPEnabled")
+        }
+        if UserDefaults.standard.object(forKey: "isPiPAudioTransferEnabled") != nil {
+            self.isPiPAudioTransferEnabled = UserDefaults.standard.bool(forKey: "isPiPAudioTransferEnabled")
+        }
+        if UserDefaults.standard.object(forKey: "isPiPSyncProgressEnabled") != nil {
+            self.isPiPSyncProgressEnabled = UserDefaults.standard.bool(forKey: "isPiPSyncProgressEnabled")
+        }
         
         startMouseTracking()
+        startPiPTimer()
         
         NotificationCenter.default.addObserver(
             self,
@@ -235,6 +273,7 @@ public final class FloatingPillWindowController: NSObject {
         stopMouseTracking()
         retractTimer?.invalidate()
         guideHideTimer?.invalidate()
+        pipTimer?.invalidate()
     }
     
     @objc private func screenParametersChanged() {
@@ -264,9 +303,73 @@ public final class FloatingPillWindowController: NSObject {
         mouseTrackerTimer = nil
     }
     
+    private func startPiPTimer() {
+        pipTimer?.invalidate()
+        pipTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in
+            self?.checkPiPStatus()
+        }
+    }
+    
+    private func checkPiPStatus() {
+        guard isPiPEnabled, isVideoPreviewEnabled, let track = detector.currentTrack, track.isPlaying else {
+            if isPiPActive {
+                exitPiPMode()
+            }
+            return
+        }
+        
+        let isTabActive = detector.isUserActiveOnYouTubeTab()
+        if !isTabActive && !isPiPActive {
+            enterPiPMode()
+        } else if isTabActive && isPiPActive {
+            exitPiPMode()
+        }
+    }
+    
+    private func enterPiPMode() {
+        guard !isPiPActive else { return }
+        isPiPActive = true
+        
+        // Auto-show floating panel if not already dropped down
+        if !isDroppedDown {
+            dropDown()
+        }
+        
+        // Transfer audio to side panel if enabled
+        if isPiPAudioTransferEnabled {
+            pillView?.setPiPAudio(enabled: true)
+        }
+    }
+    
+    private func exitPiPMode() {
+        guard isPiPActive else { return }
+        isPiPActive = false
+        
+        // Mute side panel preview audio
+        pillView?.setPiPAudio(enabled: false)
+        
+        // Sync watching progress back to browser if enabled
+        if isPiPSyncProgressEnabled, let pv = pillView, let track = detector.currentTrack {
+            let panelTime = pv.currentTime
+            if panelTime > 1.0 {
+                detector.seekBrowser(track: track, toSeconds: panelTime)
+            }
+        }
+        
+        // If not pinned and mouse is not hovering, retract after a brief grace period
+        if !isPinned && !isHoveringActive && isDroppedDown {
+            retractTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                if !self.isPinned && !self.isHoveringActive {
+                    self.retract()
+                }
+            }
+        }
+    }
+    
     private func checkMousePositionBackground() {
         guard isEnabled && hoverDropOnly else { return }
-        if isPinned { return }
+        if isPinned || isPiPActive { return }
         
         let mouse = NSEvent.mouseLocation
         
@@ -520,15 +623,25 @@ public final class FloatingPillWindowController: NSObject {
         let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: customPanelWidth, height: 56))
         pv.preferredPanelWidth = customPanelWidth
         pv.isPinned = isPinned
-        pv.isVideoPreviewEnabled = isVideoPreviewEnabled
-        pv.onOpenTab = { [weak detector] in
+        pv.onOpenTab = { [weak self, weak detector, weak pv] in
+            guard let self = self else { return }
             if let t = detector?.currentTrack {
-                detector?.focusTab(track: t)
+                let seekTime = (self.isPiPSyncProgressEnabled && pv != nil) ? pv!.currentTime : nil
+                detector?.focusTab(track: t, atSeconds: seekTime)
             }
         }
-        pv.onTogglePlayPause = { [weak detector] in
-            if let t = detector?.currentTrack {
-                detector?.togglePlayPause(track: t)
+        pv.onSeekRequested = { [weak self, weak detector] seconds in
+            guard let self = self else { return }
+            if self.isPiPSyncProgressEnabled, let t = detector?.currentTrack {
+                detector?.seekBrowser(track: t, toSeconds: seconds)
+            }
+        }
+        pv.onTogglePlayPause = { [weak self, weak detector] in
+            guard let self = self else { return }
+            if !self.isPiPActive {
+                if let t = detector?.currentTrack {
+                    detector?.togglePlayPause(track: t)
+                }
             }
         }
         pv.onTogglePin = { [weak self] in
@@ -552,11 +665,14 @@ public final class FloatingPillWindowController: NSObject {
             if self.isPinned {
                 self.isPinned = false
             }
+            if self.isPiPActive {
+                self.exitPiPMode()
+            }
             self.retract(immediately: false)
         }
         pv.onHoverStateChanged = { [weak self] isHovered in
             guard let self = self else { return }
-            if self.isPinned { return }
+            if self.isPinned || self.isPiPActive { return }
             if isHovered {
                 self.retractTimer?.invalidate()
                 self.retractTimer = nil
@@ -581,6 +697,9 @@ public final class FloatingPillWindowController: NSObject {
     private func updateContent(track: TrackInfo?) {
         let (panel, pv) = setupPillPanel()
         pv.update(with: track)
+        if isPiPActive && isPiPAudioTransferEnabled {
+            pv.setPiPAudio(enabled: true)
+        }
         let fittingSize = pv.calculateFittingSize()
         panel.setContentSize(fittingSize)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
@@ -595,6 +714,9 @@ public final class FloatingPillWindowController: NSObject {
         
         pv.preferredPanelWidth = customPanelWidth
         pv.update(with: detector.currentTrack)
+        if isPiPActive && isPiPAudioTransferEnabled {
+            pv.setPiPAudio(enabled: true)
+        }
         let fittingSize = pv.calculateFittingSize()
         panel.setContentSize(fittingSize)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
@@ -623,7 +745,7 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     public func retract(immediately: Bool = false) {
-        if isPinned && !immediately {
+        if (isPinned || isPiPActive) && !immediately {
             return
         }
         guard let panel = pillPanel, let pv = pillView, isDroppedDown || panel.isVisible else { return }

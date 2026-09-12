@@ -51,6 +51,15 @@ public struct TrackInfo: Equatable, Identifiable {
         return !vid.isEmpty
     }
     
+    public var startSeconds: Double? {
+        guard let components = URLComponents(string: url) else { return nil }
+        if let tVal = components.queryItems?.first(where: { $0.name == "t" })?.value {
+            let digits = tVal.trimmingCharacters(in: CharacterSet(charactersIn: "sS"))
+            return Double(digits)
+        }
+        return nil
+    }
+    
     public static func cleanRawTitle(_ raw: String) -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         
