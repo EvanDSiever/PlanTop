@@ -272,9 +272,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
     
     @objc private func playPauseClicked() {
-        if let track = detector.currentTrack {
-            detector.togglePlayPause(track: track)
-        }
+        pillController.togglePlayPause()
     }
     
     @objc private func nextTrackClicked() {

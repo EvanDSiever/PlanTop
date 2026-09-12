@@ -124,6 +124,14 @@ public final class FloatingPillWindowController: NSObject {
         }
     }
     
+    public func togglePlayPause() {
+        if let pv = pillView {
+            pv.togglePlayPause()
+        } else if let track = detector.currentTrack {
+            detector.togglePlayPause(track: track)
+        }
+    }
+    
     public var isEnabled: Bool = true {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "isPillEnabled")

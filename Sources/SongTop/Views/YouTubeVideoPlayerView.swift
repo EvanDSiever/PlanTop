@@ -15,8 +15,25 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
     }
 }
 
+final class VideoClickOverlayView: NSView {
+    var onClicked: (() -> Void)?
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if bounds.contains(point) {
+            onClicked?()
+        }
+    }
+}
+
 public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     private var webView: WKWebView!
+    private let clickOverlay = VideoClickOverlayView()
     private let loadingIndicator = NSProgressIndicator()
     private let loadingLabel = NSTextField(labelWithString: "Loading Video Preview...")
     private let fallbackImageView = NSImageView()
@@ -26,6 +43,10 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     public private(set) var isMuted: Bool = true
     public private(set) var isPlaying: Bool = false
     public private(set) var isReady: Bool = false
+    private var shouldBePlaying: Bool = true
+    
+    public var onVideoClicked: (() -> Void)?
+    public var onPlaybackStateChanged: ((Bool) -> Void)?
     
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -75,6 +96,15 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
         addSubview(webView)
         
+        // Transparent Click Overlay:
+        // Sits on top of the webView so YouTube never receives mouse hover events,
+        // eliminating all YouTube hover chrome/titles/pause buttons, while allowing clicks to toggle play/pause!
+        clickOverlay.wantsLayer = true
+        clickOverlay.onClicked = { [weak self] in
+            self?.onVideoClicked?()
+        }
+        addSubview(clickOverlay)
+        
         // Loading Spinner
         loadingIndicator.style = .spinning
         loadingIndicator.controlSize = .small
@@ -102,6 +132,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         super.layout()
         fallbackImageView.frame = bounds
         webView.frame = bounds
+        clickOverlay.frame = bounds
+        window?.invalidateCursorRects(for: clickOverlay)
         
         let spinnerSize: CGFloat = 20
         loadingIndicator.frame = NSRect(
@@ -133,20 +165,22 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         }
         
         if currentVideoId == id && isReady {
-            play()
+            if shouldBePlaying {
+                play()
+            }
             return
         }
         
         currentVideoId = id
         isReady = false
         isPlaying = false
+        shouldBePlaying = true
         fallbackImageView.isHidden = true
         
         loadingIndicator.startAnimation(nil)
         loadingLabel.isHidden = false
         loadingLabel.stringValue = "Loading Video Preview..."
         
-        // Pre-fetch fallback thumbnail in background
         loadFallbackThumbnail(id: id)
         
         let html = generatePlayerHTML(videoId: id)
@@ -165,15 +199,27 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     }
     
     public func play() {
+        shouldBePlaying = true
         guard isReady else { return }
         webView.evaluateJavaScript("if (window.player && player.playVideo) { player.playVideo(); }", completionHandler: nil)
         isPlaying = true
+        onPlaybackStateChanged?(true)
     }
     
     public func pause() {
+        shouldBePlaying = false
         guard isReady else { return }
         webView.evaluateJavaScript("if (window.player && player.pauseVideo) { player.pauseVideo(); }", completionHandler: nil)
         isPlaying = false
+        onPlaybackStateChanged?(false)
+    }
+    
+    public func togglePlayPause() {
+        if isPlaying {
+            pause()
+        } else {
+            play()
+        }
     }
     
     public func toggleMute() {
@@ -220,18 +266,26 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
                 self.isReady = true
                 self.loadingIndicator.stopAnimation(nil)
                 self.loadingLabel.isHidden = true
-                self.play()
+                if self.shouldBePlaying {
+                    self.play()
+                } else {
+                    self.pause()
+                }
             } else if message == "state_1" { // Playing
                 self.isPlaying = true
+                self.shouldBePlaying = true
                 self.loadingIndicator.stopAnimation(nil)
                 self.loadingLabel.isHidden = true
                 self.fallbackImageView.isHidden = true
+                self.onPlaybackStateChanged?(true)
             } else if message == "state_2" { // Paused
                 self.isPlaying = false
+                self.shouldBePlaying = false
+                self.onPlaybackStateChanged?(false)
             } else if message.hasPrefix("error_") {
                 // Video embedding restricted by copyright holder (e.g. error 150/101)
                 self.loadingIndicator.stopAnimation(nil)
-                self.loadingLabel.stringValue = "Thumbnail View (Video author restricted embedding)"
+                self.loadingLabel.stringValue = "Thumbnail View (Author restricted embedding)"
                 self.fallbackImageView.isHidden = false
             }
         }
@@ -244,9 +298,9 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
         <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
+        * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
         body, html { width:100%; height:100%; overflow:hidden; background:#0d0d11; display:flex; align-items:center; justify-content:center; }
-        #player { width:100vw; height:100vh; object-fit:cover; }
+        #player, iframe { width:100vw; height:100vh; object-fit:cover; pointer-events:none !important; border:none; }
         </style>
         </head>
         <body>
@@ -268,6 +322,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
               'fs': 0,
               'rel': 0,
               'modestbranding': 1,
+              'iv_load_policy': 3,
               'origin': 'https://www.youtube-nocookie.com'
             },
             events: {

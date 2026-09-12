@@ -142,6 +142,12 @@ public final class FloatingPillView: NSView {
         videoPlayerView.layer?.cornerRadius = 12
         videoPlayerView.layer?.masksToBounds = true
         videoPlayerView.isHidden = true
+        videoPlayerView.onVideoClicked = { [weak self] in
+            self?.togglePlayPause()
+        }
+        videoPlayerView.onPlaybackStateChanged = { [weak self] isPlaying in
+            self?.updatePlayPauseState(isPlaying: isPlaying)
+        }
         visualEffectView.addSubview(videoPlayerView)
         
         // Red Icon Circle
@@ -338,6 +344,7 @@ public final class FloatingPillView: NSView {
             equalizerView.startAnimating()
             copyButton.isHidden = false
             playPauseButton.isHidden = false
+            updatePlayPauseState(isPlaying: true)
             openButton.toolTip = "Bring YouTube Tab to Front (\(track.browser))"
             
             if hasVideo, let vid = track.youtubeVideoId {
@@ -533,7 +540,36 @@ public final class FloatingPillView: NSView {
     }
     
     @objc private func handlePlayPause() {
+        togglePlayPause()
+    }
+    
+    public func togglePlayPause() {
+        let currentlyPlaying = videoPlayerView.isPlaying
+        let willPlay = !currentlyPlaying
+        if willPlay {
+            videoPlayerView.play()
+        } else {
+            videoPlayerView.pause()
+        }
+        updatePlayPauseState(isPlaying: willPlay)
         onTogglePlayPause?()
+    }
+    
+    public func updatePlayPauseState(isPlaying: Bool) {
+        let symbolName = isPlaying ? "pause.fill" : "play.fill"
+        let tooltip = isPlaying ? "Pause Video" : "Play Video"
+        playPauseButton.toolTip = tooltip
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)?.withSymbolConfiguration(config) {
+            playPauseButton.image = img
+            playPauseButton.imagePosition = .imageOnly
+            playPauseButton.contentTintColor = .white
+        }
+        if isPlaying {
+            equalizerView.startAnimating()
+        } else {
+            equalizerView.stopAnimating()
+        }
     }
     
     @objc private func handlePinToggle() {

@@ -1,9 +1,14 @@
 import AppKit
 
+final class FlippedSettingsContainer: NSView {
+    override var isFlipped: Bool { return true }
+}
+
 public final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var detector: YouTubeDetector
     private var pillController: FloatingPillWindowController
     private var menuBarController: MenuBarController
+    private var settingsScrollView: NSScrollView?
     
     // Live Status UI
     private let statusLabel = NSTextField(labelWithString: "No YouTube Audio Playing")
@@ -47,12 +52,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         self.menuBarController = menuBarController
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 660),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "SongTop Settings & Customization"
+        window.minSize = NSSize(width: 520, height: 450)
+        window.maxSize = NSSize(width: 600, height: 1200)
         window.center()
         window.isReleasedWhenClosed = false
         
@@ -89,6 +96,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         updateLiveStatus()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        settingsScrollView?.documentView?.scroll(NSPoint(x: 0, y: 0))
     }
     
     public func windowWillClose(_ notification: Notification) {
@@ -108,17 +116,20 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         let scrollView = NSScrollView(frame: contentView.bounds)
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = false
         scrollView.drawsBackground = false
         scrollView.autoresizingMask = [.width, .height]
         visualEffect.addSubview(scrollView)
+        self.settingsScrollView = scrollView
         
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 730))
+        let container = FlippedSettingsContainer(frame: NSRect(x: 0, y: 0, width: 520, height: 950))
         scrollView.documentView = container
         
-        var currentY: CGFloat = 710
+        var currentY: CGFloat = 20
         
         // 1. Header
-        let iconView = NSImageView(frame: NSRect(x: 24, y: currentY - 50, width: 48, height: 48))
+        let iconView = NSImageView(frame: NSRect(x: 24, y: currentY, width: 48, height: 48))
         if let icon = NSImage(named: "AppIcon") ?? NSImage(systemSymbolName: "music.note.list", accessibilityDescription: nil) {
             iconView.image = icon
         }
@@ -126,19 +137,19 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         let appTitle = NSTextField(labelWithString: "SongTop")
         appTitle.font = NSFont.systemFont(ofSize: 20, weight: .bold)
-        appTitle.frame = NSRect(x: 82, y: currentY - 32, width: 300, height: 24)
+        appTitle.frame = NSRect(x: 82, y: currentY + 4, width: 300, height: 24)
         container.addSubview(appTitle)
         
         let appSubtitle = NSTextField(labelWithString: "YouTube Now Playing for macOS • Right-Side Panel Settings")
         appSubtitle.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         appSubtitle.textColor = .secondaryLabelColor
-        appSubtitle.frame = NSRect(x: 82, y: currentY - 48, width: 390, height: 16)
+        appSubtitle.frame = NSRect(x: 82, y: currentY + 28, width: 390, height: 16)
         container.addSubview(appSubtitle)
         
-        currentY -= 70
+        currentY += 62
         
         // 2. Live Now Playing Card
-        let liveCard = createCardView(frame: NSRect(x: 20, y: currentY - 80, width: 480, height: 74))
+        let liveCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 74))
         container.addSubview(liveCard)
         
         let liveBadge = NSTextField(labelWithString: "LIVE DETECTED TRACK")
@@ -163,10 +174,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         testBtn.frame = NSRect(x: 345, y: 22, width: 122, height: 28)
         liveCard.addSubview(testBtn)
         
-        currentY -= 95
+        currentY += 74 + 14
         
         // 3. Display Mode Card
-        let modeCard = createCardView(frame: NSRect(x: 20, y: currentY - 76, width: 480, height: 70))
+        let modeCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 70))
         container.addSubview(modeCard)
         
         let modeTitle = NSTextField(labelWithString: "Display Mode")
@@ -179,10 +190,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         modeSegmentedControl.action = #selector(modeChanged)
         modeCard.addSubview(modeSegmentedControl)
         
-        currentY -= 90
+        currentY += 70 + 14
         
         // 4. Right-Edge Hover Sensitivity & Area Card
-        let hoverCard = createCardView(frame: NSRect(x: 20, y: currentY - 180, width: 480, height: 174))
+        let hoverCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 174))
         container.addSubview(hoverCard)
         
         let hoverTitle = NSTextField(labelWithString: "Right-Edge Hover Sensitivity & Area")
@@ -253,10 +264,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         hoverDesc.frame = NSRect(x: 14, y: 12, width: 450, height: 16)
         hoverCard.addSubview(hoverDesc)
         
-        currentY -= 195
+        currentY += 174 + 14
         
         // 5. Behavior / Auto-Peek Card
-        let peekCard = createCardView(frame: NSRect(x: 20, y: currentY - 100, width: 480, height: 94))
+        let peekCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 94))
         container.addSubview(peekCard)
         
         let peekTitle = NSTextField(labelWithString: "Track Change Behavior")
@@ -285,12 +296,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         peekDurationLabel.frame = NSRect(x: 400, y: 14, width: 65, height: 16)
         peekCard.addSubview(peekDurationLabel)
         
-        currentY -= 115
+        currentY += 94 + 14
         
-        currentY -= 115
-        
-        // 6. Live Video Playback & Sizing Card
-        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY - 146, width: 480, height: 140))
+        // 6. Live Video Playback & Dynamic Sizing Card
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 140))
         container.addSubview(videoCard)
         
         let videoTitle = NSTextField(labelWithString: "Live Video Playback & Dynamic Sizing")
@@ -330,10 +339,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         dragTip.frame = NSRect(x: 14, y: 8, width: 450, height: 14)
         videoCard.addSubview(dragTip)
         
-        currentY -= 160
+        currentY += 140 + 14
         
         // 7. Menu Bar Options Card
-        let menuCard = createCardView(frame: NSRect(x: 20, y: currentY - 60, width: 480, height: 54))
+        let menuCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 54))
         container.addSubview(menuCard)
         
         menuBarTitleCheckbox.frame = NSRect(x: 14, y: 18, width: 450, height: 18)
@@ -341,10 +350,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         menuBarTitleCheckbox.action = #selector(menuBarTitleToggled)
         menuCard.addSubview(menuBarTitleCheckbox)
         
-        currentY -= 75
+        currentY += 54 + 14
         
         // 8. Browser Status Card
-        let browserCard = createCardView(frame: NSRect(x: 20, y: currentY - 65, width: 480, height: 58))
+        let browserCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 58))
         container.addSubview(browserCard)
         
         let browserCardTitle = NSTextField(labelWithString: "Supported Browsers Detected")
@@ -358,6 +367,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         browsersStack.frame = NSRect(x: 14, y: 10, width: 450, height: 18)
         browserCard.addSubview(browsersStack)
         updateBrowserBadges()
+        
+        currentY += 58 + 24
+        
+        container.frame = NSRect(x: 0, y: 0, width: 520, height: currentY)
     }
     
     private func createCardView(frame: NSRect) -> NSView {
