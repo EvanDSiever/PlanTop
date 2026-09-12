@@ -5,20 +5,23 @@ public final class FloatingPillWindowController: NSObject {
     private var pillView: FloatingPillView?
     private var detector: YouTubeDetector
     
-    private var mousePollingTimer: Timer?
+    // Dedicated background timer for cursor tracking (immune to main runloop freezes)
+    private var mouseTrackerTimer: DispatchSourceTimer?
+    private let mouseQueue = DispatchQueue(label: "com.songtop.mousetracker", qos: .userInteractive)
+    
     private var retractTimer: Timer?
     
-    private var isDroppedDown: Bool = false
+    public private(set) var isDroppedDown: Bool = false
     private var isHoveringActive: Bool = false
     private var lastTrackId: String = ""
     
-    // Scan dimensions
-    public var scanWidth: CGFloat = 750 {
+    // Customizable scan dimensions
+    public var scanWidth: CGFloat = 850 {
         didSet {
             UserDefaults.standard.set(Double(scanWidth), forKey: "scanWidth")
         }
     }
-    public var scanHeight: CGFloat = 70 {
+    public var scanHeight: CGFloat = 75 {
         didSet {
             UserDefaults.standard.set(Double(scanHeight), forKey: "scanHeight")
         }
@@ -39,9 +42,9 @@ public final class FloatingPillWindowController: NSObject {
             UserDefaults.standard.set(isEnabled, forKey: "isPillEnabled")
             if !isEnabled {
                 retract(immediately: true)
-                stopMousePolling()
+                stopMouseTracking()
             } else {
-                startMousePolling()
+                startMouseTracking()
                 if !hoverDropOnly {
                     dropDown()
                 }
@@ -83,7 +86,7 @@ public final class FloatingPillWindowController: NSObject {
             self.autoPeekEnabled = UserDefaults.standard.bool(forKey: "autoPeekEnabled")
         }
         
-        startMousePolling()
+        startMouseTracking()
         
         NotificationCenter.default.addObserver(
             self,
@@ -95,76 +98,97 @@ public final class FloatingPillWindowController: NSObject {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
-        stopMousePolling()
+        stopMouseTracking()
         retractTimer?.invalidate()
     }
     
     @objc private func screenParametersChanged() {
-        if isDroppedDown {
-            repositionPanel()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.isDroppedDown {
+                self.repositionPanel()
+            }
         }
     }
     
-    private func startMousePolling() {
-        stopMousePolling()
+    private func startMouseTracking() {
+        stopMouseTracking()
         guard isEnabled else { return }
         
-        // Poll global mouse cursor position 12 times a second (0.08s interval)
-        // Uses ~0.002% CPU and reliably bypasses all macOS transparency & TCC restrictions
-        mousePollingTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-            self?.checkMousePosition()
+        let timer = DispatchSource.makeTimerSource(queue: mouseQueue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(50)) // 20 times a second
+        timer.setEventHandler { [weak self] in
+            self?.checkMousePositionBackground()
         }
+        timer.resume()
+        self.mouseTrackerTimer = timer
     }
     
-    private func stopMousePolling() {
-        mousePollingTimer?.invalidate()
-        mousePollingTimer = nil
+    private func stopMouseTracking() {
+        mouseTrackerTimer?.cancel()
+        mouseTrackerTimer = nil
     }
     
-    private func checkMousePosition() {
+    private func checkMousePositionBackground() {
         guard isEnabled && hoverDropOnly else { return }
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main else { return }
         
         let mouse = NSEvent.mouseLocation
-        let midX = screen.frame.midX
-        let maxY = screen.frame.maxY
         
-        // Generous top center scan area (750px wide, top 70px of screen)
-        let effectiveWidth = min(scanWidth, screen.frame.width * 0.75)
+        // Find the screen under the mouse, or fallback to main
+        let activeScreen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+        guard let screen = activeScreen else { return }
+        
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        
+        // Comprehensive trigger zone respecting macOS Menu Bar settings:
+        // - Spans from the absolute top of the screen (screenFrame.maxY)
+        // - Reaches through the menu bar down into the visible frame by scanHeight
+        let effectiveWidth = min(scanWidth, screenFrame.width * 0.9)
+        let triggerTop = screenFrame.maxY
+        let triggerBottom = visibleFrame.maxY - scanHeight
         let triggerRect = NSRect(
-            x: midX - (effectiveWidth / 2),
-            y: maxY - scanHeight,
+            x: screenFrame.midX - (effectiveWidth / 2),
+            y: triggerBottom,
             width: effectiveWidth,
-            height: scanHeight
+            height: triggerTop - triggerBottom
         )
         
-        // Pill area when dropped down (includes extra 30px breathing room around edges)
-        let pillRect: NSRect
-        if let panel = pillPanel, isDroppedDown {
-            pillRect = panel.frame.insetBy(dx: -30, dy: -25)
-        } else {
-            pillRect = .zero
+        // Pill area when dropped down
+        var pillRect: NSRect = .zero
+        var currentDroppedDown = false
+        
+        DispatchQueue.main.sync {
+            currentDroppedDown = self.isDroppedDown
+            if let panel = self.pillPanel, currentDroppedDown {
+                // Add comfortable 40px margin around the pill
+                pillRect = panel.frame.insetBy(dx: -40, dy: -30)
+            }
         }
         
         let inTrigger = NSPointInRect(mouse, triggerRect)
-        let inPill = NSPointInRect(mouse, pillRect)
-        let isInside = inTrigger || inPill
+        let inPill = currentDroppedDown && NSPointInRect(mouse, pillRect)
+        let shouldBeOpen = inTrigger || inPill
         
-        if isInside {
-            retractTimer?.invalidate()
-            retractTimer = nil
-            isHoveringActive = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             
-            if !isDroppedDown {
-                dropDown()
-            }
-        } else {
-            if isHoveringActive || isDroppedDown {
-                isHoveringActive = false
-                if retractTimer == nil {
-                    // 0.5s grace period before sliding back up
-                    retractTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-                        self?.retract()
+            if shouldBeOpen {
+                self.retractTimer?.invalidate()
+                self.retractTimer = nil
+                self.isHoveringActive = true
+                
+                if !self.isDroppedDown {
+                    self.dropDown()
+                }
+            } else {
+                if self.isHoveringActive || self.isDroppedDown {
+                    self.isHoveringActive = false
+                    if self.retractTimer == nil {
+                        // 0.5s grace period before retracting
+                        self.retractTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+                            self?.retract()
+                        }
                     }
                 }
             }
@@ -216,7 +240,7 @@ public final class FloatingPillWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        // High floating level so it displays smoothly above browser windows and menu bar
+        // High floating level so it displays smoothly above browser windows
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) + 1)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -265,22 +289,20 @@ public final class FloatingPillWindowController: NSObject {
         panel.setContentSize(fittingSize)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
         
-        let screenFrame = screen.visibleFrame
-        let targetX = screenFrame.midX - (fittingSize.width / 2)
-        let targetY = screenFrame.maxY - fittingSize.height - 6
-        
-        if !isDroppedDown || !panel.isVisible {
-            panel.setFrameOrigin(NSPoint(x: targetX, y: screen.frame.maxY + 10))
-            panel.alphaValue = 0.0
-            panel.orderFront(nil)
-        }
+        let visibleFrame = screen.visibleFrame
+        let targetX = visibleFrame.midX - (fittingSize.width / 2)
+        // Anchor directly underneath the user's macOS Menu Bar (or screen top if menu bar is hidden)
+        let targetY = visibleFrame.maxY - fittingSize.height - 6
         
         isDroppedDown = true
         
+        // Position on-screen within valid visible bounds (never place offscreen to avoid macOS WindowServer clamping bugs)
+        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+        panel.orderFront(nil)
+        
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.28
+            context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrameOrigin(NSPoint(x: targetX, y: targetY))
             panel.animator().alphaValue = 1.0
         }
     }
@@ -291,14 +313,6 @@ public final class FloatingPillWindowController: NSObject {
         retractTimer?.invalidate()
         retractTimer = nil
         
-        guard let screen = NSScreen.main else {
-            panel.orderOut(nil)
-            return
-        }
-        
-        let targetX = panel.frame.origin.x
-        let targetY = screen.frame.maxY + 10
-        
         if immediately {
             panel.alphaValue = 0.0
             panel.orderOut(nil)
@@ -306,9 +320,8 @@ public final class FloatingPillWindowController: NSObject {
         }
         
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.22
+            context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().setFrameOrigin(NSPoint(x: targetX, y: targetY))
             panel.animator().alphaValue = 0.0
         }, completionHandler: {
             if !self.isDroppedDown {
@@ -320,8 +333,9 @@ public final class FloatingPillWindowController: NSObject {
     private func repositionPanel() {
         guard let screen = NSScreen.main, let panel = pillPanel, let pv = pillView else { return }
         let fittingSize = pv.calculateFittingSize()
-        let targetX = screen.visibleFrame.midX - (fittingSize.width / 2)
-        let targetY = screen.visibleFrame.maxY - fittingSize.height - 6
+        let visibleFrame = screen.visibleFrame
+        let targetX = visibleFrame.midX - (fittingSize.width / 2)
+        let targetY = visibleFrame.maxY - fittingSize.height - 6
         panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }
 }

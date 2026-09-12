@@ -14,10 +14,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let modeSegmentedControl = NSSegmentedControl(labels: ["Hover Dropdown", "Always Floating", "Menu Bar Only"], trackingMode: .selectOne, target: nil, action: nil)
     
     // Hover Controls
-    private let widthSlider = NSSlider(value: 750, minValue: 300, maxValue: 1400, target: nil, action: nil)
-    private let widthValueLabel = NSTextField(labelWithString: "750 px")
-    private let heightSlider = NSSlider(value: 70, minValue: 30, maxValue: 120, target: nil, action: nil)
-    private let heightValueLabel = NSTextField(labelWithString: "70 px")
+    private let widthSlider = NSSlider(value: 850, minValue: 300, maxValue: 1600, target: nil, action: nil)
+    private let widthValueLabel = NSTextField(labelWithString: "850 px")
+    private let heightSlider = NSSlider(value: 75, minValue: 30, maxValue: 150, target: nil, action: nil)
+    private let heightValueLabel = NSTextField(labelWithString: "75 px")
     
     // Auto Peek Controls
     private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically drop down when a new song starts", target: nil, action: nil)
