@@ -5,6 +5,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem
     private var detector: YouTubeDetector
     private var pillController: FloatingPillWindowController
+    private var loginWindowController: YouTubeLoginWindowController?
     
     public var showTitleInMenuBar: Bool = true {
         didSet {
@@ -249,6 +250,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         settingsItem.image = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: nil)
         menu.addItem(settingsItem)
         
+        let signInItem = NSMenuItem(title: "Sign In to YouTube (Premium / Account)...", action: #selector(openYouTubeLoginClicked), keyEquivalent: "")
+        signInItem.target = self
+        signInItem.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
+        menu.addItem(signInItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         // Quit
@@ -329,6 +335,13 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     @objc private func openSettingsClicked() {
         onOpenSettings?()
+    }
+    
+    @objc private func openYouTubeLoginClicked() {
+        if loginWindowController == nil {
+            loginWindowController = YouTubeLoginWindowController()
+        }
+        loginWindowController?.show()
     }
     
     @objc private func quitClicked() {

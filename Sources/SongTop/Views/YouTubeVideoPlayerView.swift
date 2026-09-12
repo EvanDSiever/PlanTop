@@ -15,27 +15,10 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
     }
 }
 
-final class VideoClickOverlayView: NSView {
-    var onClicked: (() -> Void)?
-    
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-    
-    override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if bounds.contains(point) {
-            onClicked?()
-        }
-    }
-}
-
-public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
+public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, WKNavigationDelegate {
     private var webView: WKWebView!
-    private let clickOverlay = VideoClickOverlayView()
     private let loadingIndicator = NSProgressIndicator()
-    private let loadingLabel = NSTextField(labelWithString: "Loading Video Preview...")
+    private let loadingLabel = NSTextField(labelWithString: "Loading Video Stream...")
     private let fallbackImageView = NSImageView()
     private let muteButton = NSButton()
     
@@ -56,15 +39,37 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupViews()
+        setupAuthObserver()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupViews()
+        setupAuthObserver()
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "playerBridge")
+    }
+    
+    private func setupAuthObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAuthChanged),
+            name: .songTopYouTubeAuthChanged,
+            object: nil
+        )
+    }
+    
+    @objc private func handleAuthChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let vid = self.currentVideoId else { return }
+            // Reload with newly authenticated credentials (e.g. YouTube Premium)
+            let curTime = self.currentTime
+            self.clearVideo()
+            self.loadVideo(id: vid, startSeconds: curTime)
+        }
     }
     
     private func setupViews() {
@@ -83,14 +88,205 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         fallbackImageView.isHidden = true
         addSubview(fallbackImageView)
         
-        // WebKit Configuration
+        // WebKit Configuration with Persistent Data Store (Preserves YouTube Premium & Logged-in accounts)
         let config = WKWebViewConfiguration()
+        config.websiteDataStore = WKWebsiteDataStore.default()
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsAirPlayForMediaPlayback = false
         
         let ucc = WKUserContentController()
         let proxy = ScriptMessageProxy(delegate: self)
         ucc.add(proxy, name: "playerBridge")
+        
+        // Injected CSS: Pins the video to 100vw x 100vh, eliminates all extraneous mastheads, sidebars, comments,
+        // and hides all YouTube hover chrome (title, gradient, bottom controls) while keeping ad skip buttons fully interactive!
+        let injectedCSS = """
+        html, body, ytd-app, #content, #page-manager, ytd-watch-flexy, #columns, #primary, #primary-inner, #player, #player-container-outer, #player-container-inner, #player-container {
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: #000 !important;
+        }
+
+        #masthead-container,
+        #secondary,
+        #below,
+        #chat-container,
+        ytd-miniplayer,
+        #guide,
+        tp-yt-app-drawer,
+        #comments,
+        ytd-watch-metadata,
+        #related,
+        ytd-merch-shelf-renderer,
+        ytd-banner-promo-renderer,
+        #clarify-box,
+        #donation-shelf,
+        #panels,
+        #ticket-shelf,
+        #actions,
+        #meta,
+        #info,
+        ytd-engagement-panel-section-list-renderer,
+        ytd-popup-container,
+        #guide-wrapper,
+        #voice-search-button,
+        #search-form {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+
+        #movie_player,
+        .html5-video-player,
+        #player-theater-container {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            z-index: 99999 !important;
+            background: #000 !important;
+        }
+
+        video.html5-main-video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+        }
+
+        .ytp-chrome-top,
+        .ytp-title-text,
+        .ytp-title-channel,
+        .ytp-title,
+        .ytp-gradient-top,
+        .ytp-gradient-bottom,
+        .ytp-chrome-bottom,
+        .ytp-pause-overlay,
+        .ytp-watermark,
+        .ytp-ce-element,
+        .ytp-cards-button,
+        .ytp-cards-teaser,
+        .ytp-bezel,
+        .ytp-bezel-text,
+        .ytp-expand-pause-overlay,
+        .ytp-paid-content-overlay {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+
+        .ytp-ad-module,
+        .ytp-ad-skip-button-container,
+        .ytp-ad-skip-button-modern,
+        .ytp-ad-skip-button,
+        .ytp-ad-overlay-container,
+        .ytp-ad-text,
+        .videoAdUiSkipButton,
+        .ytp-ad-preview-container {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            z-index: 100000 !important;
+        }
+        """
+        
+        let escapedCSS = injectedCSS.replacingOccurrences(of: "\n", with: " ")
+        let styleInjectionJS = """
+        (function() {
+            function injectStyle() {
+                if (!document.getElementById('songtop-player-style')) {
+                    var s = document.createElement('style');
+                    s.id = 'songtop-player-style';
+                    s.textContent = `\(escapedCSS)`;
+                    (document.head || document.documentElement).appendChild(s);
+                }
+            }
+            injectStyle();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', injectStyle);
+            }
+        })();
+        """
+        let cssScript = WKUserScript(source: styleInjectionJS, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        ucc.addUserScript(cssScript)
+        
+        // Injected JS: Polling HTML5 video element, auto-skipping ads, handling click interactions
+        let injectedBridgeJS = """
+        (function() {
+            if (window._songTopInjected) return;
+            window._songTopInjected = true;
+
+            function getPlayer() {
+                return document.getElementById('movie_player');
+            }
+
+            function getVideo() {
+                return document.querySelector('video.html5-main-video') || document.querySelector('video');
+            }
+
+            function autoSkipAds() {
+                var skipBtn = document.querySelector('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .videoAdUiSkipButton, .ytp-skip-ad-button');
+                if (skipBtn) {
+                    try { skipBtn.click(); } catch(e) {}
+                }
+            }
+
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.closest && e.target.closest('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .videoAdUiSkipButton, .ytp-skip-ad-button, .ytp-ad-module')) {
+                    return;
+                }
+                try {
+                    window.webkit.messageHandlers.playerBridge.postMessage('videoClicked');
+                } catch(err) {}
+            }, true);
+
+            var lastPlayingState = null;
+            var readyNotified = false;
+
+            setInterval(function() {
+                autoSkipAds();
+
+                var v = getVideo();
+                var p = getPlayer();
+
+                if (v) {
+                    if (!readyNotified && v.readyState >= 1) {
+                        readyNotified = true;
+                        try {
+                            window.webkit.messageHandlers.playerBridge.postMessage('ready');
+                        } catch(e) {}
+                    }
+
+                    var isPlaying = (!v.paused && !v.ended && v.readyState > 2);
+                    var stateMsg = isPlaying ? 'state_1' : 'state_2';
+                    if (stateMsg !== lastPlayingState) {
+                        lastPlayingState = stateMsg;
+                        try {
+                            window.webkit.messageHandlers.playerBridge.postMessage(stateMsg);
+                        } catch(e) {}
+                    }
+
+                    var cur = v.currentTime || 0;
+                    var dur = v.duration || (p && p.getDuration ? p.getDuration() : 0) || 0;
+                    var vol = Math.round((v.volume || 0) * 100);
+                    var muted = v.muted ? 1 : 0;
+
+                    try {
+                        window.webkit.messageHandlers.playerBridge.postMessage('progress_' + cur.toFixed(1) + '_' + dur.toFixed(1) + '_' + vol + '_' + muted);
+                    } catch(e) {}
+                }
+            }, 250);
+        })();
+        """
+        let bridgeScript = WKUserScript(source: injectedBridgeJS, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        ucc.addUserScript(bridgeScript)
+        
         config.userContentController = ucc
         
         webView = WKWebView(frame: bounds, configuration: config)
@@ -98,17 +294,10 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         webView.wantsLayer = true
         webView.layer?.cornerRadius = 12
         webView.layer?.masksToBounds = true
+        webView.navigationDelegate = self
+        // Standard Desktop Safari User-Agent avoids Google OAuth blocks and renders desktop layout
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
         addSubview(webView)
-        
-        // Transparent Click Overlay:
-        // Sits on top of the webView so YouTube never receives mouse hover events,
-        // eliminating all YouTube hover chrome/titles/pause buttons, while allowing clicks to toggle play/pause!
-        clickOverlay.wantsLayer = true
-        clickOverlay.onClicked = { [weak self] in
-            self?.onVideoClicked?()
-        }
-        addSubview(clickOverlay)
         
         // Loading Spinner
         loadingIndicator.style = .spinning
@@ -137,8 +326,6 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         super.layout()
         fallbackImageView.frame = bounds
         webView.frame = bounds
-        clickOverlay.frame = bounds
-        window?.invalidateCursorRects(for: clickOverlay)
         
         let spinnerSize: CGFloat = 20
         loadingIndicator.frame = NSRect(
@@ -169,6 +356,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
             return
         }
         
+        let startVal = max(0, Int(startSeconds))
+        
         if currentVideoId == id && isReady {
             if startSeconds > 0 && abs(currentTime - startSeconds) > 3 {
                 seekTo(seconds: startSeconds)
@@ -193,8 +382,34 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         
         loadFallbackThumbnail(id: id)
         
-        let html = generatePlayerHTML(videoId: id, startSeconds: startSeconds)
-        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube-nocookie.com"))
+        // If webView is already on youtube.com, perform instant SPA player switch
+        if let host = webView.url?.host, host.contains("youtube.com") {
+            let spaJS = """
+            (function() {
+                var p = document.getElementById('movie_player');
+                if (p && p.loadVideoById) {
+                    p.loadVideoById({ videoId: '\(id)', startSeconds: \(startVal) });
+                    if (\(isMuted) && p.mute) { p.mute(); }
+                    return true;
+                } else {
+                    window.location.href = 'https://www.youtube.com/watch?v=\(id)&t=\(startVal)s';
+                    return false;
+                }
+            })();
+            """
+            webView.evaluateJavaScript(spaJS) { [weak self] res, error in
+                guard let self = self else { return }
+                if error != nil {
+                    if let targetURL = URL(string: "https://www.youtube.com/watch?v=\(id)&t=\(startVal)s") {
+                        self.webView.load(URLRequest(url: targetURL))
+                    }
+                }
+            }
+        } else {
+            if let targetURL = URL(string: "https://www.youtube.com/watch?v=\(id)&t=\(startVal)s") {
+                webView.load(URLRequest(url: targetURL))
+            }
+        }
     }
     
     public func clearVideo() {
@@ -213,7 +428,15 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     public func play() {
         shouldBePlaying = true
         guard isReady else { return }
-        webView.evaluateJavaScript("if (window.player && player.playVideo) { player.playVideo(); }", completionHandler: nil)
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.playVideo) { p.playVideo(); }
+            var v = document.querySelector('video');
+            if (v && v.paused) { v.play().catch(function(){}); }
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
         isPlaying = true
         onPlaybackStateChanged?(true)
     }
@@ -221,7 +444,15 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
     public func pause() {
         shouldBePlaying = false
         guard isReady else { return }
-        webView.evaluateJavaScript("if (window.player && player.pauseVideo) { player.pauseVideo(); }", completionHandler: nil)
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.pauseVideo) { p.pauseVideo(); }
+            var v = document.querySelector('video');
+            if (v && !v.paused) { v.pause(); }
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
         isPlaying = false
         onPlaybackStateChanged?(false)
     }
@@ -238,7 +469,15 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         let target = max(0, min(duration > 0 ? duration : 36000, seconds))
         currentTime = target
         guard isReady else { return }
-        webView.evaluateJavaScript("if (window.player && player.seekTo) { player.seekTo(\(target), true); }", completionHandler: nil)
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.seekTo) { p.seekTo(\(target), true); }
+            var v = document.querySelector('video');
+            if (v) { v.currentTime = \(target); }
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
     
     public func skip(by seconds: Double) {
@@ -249,7 +488,16 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         let clamped = max(0, min(100, volume))
         self.volume = clamped
         guard isReady else { return }
-        webView.evaluateJavaScript("if (window.player && player.setVolume) { player.setVolume(\(clamped)); }", completionHandler: nil)
+        let fraction = Double(clamped) / 100.0
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.setVolume) { p.setVolume(\(clamped)); }
+            var v = document.querySelector('video');
+            if (v) { v.volume = \(fraction); }
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
         onVolumeChanged?(clamped, isMuted)
     }
     
@@ -257,7 +505,17 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         isMuted = muted
         updateMuteButtonIcon()
         guard isReady else { return }
-        let js = muted ? "if (window.player && player.mute) player.mute();" : "if (window.player && player.unMute) player.unMute();"
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p) {
+                if (\(muted) && p.mute) { p.mute(); }
+                else if (!\(muted) && p.unMute) { p.unMute(); }
+            }
+            var v = document.querySelector('video');
+            if (v) { v.muted = \(muted); }
+        })();
+        """
         webView.evaluateJavaScript(js, completionHandler: nil)
         onVolumeChanged?(volume, isMuted)
     }
@@ -293,13 +551,15 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
         }.resume()
     }
     
-    // YouTubeVideoPlayerDelegate
+    // MARK: - YouTubeVideoPlayerDelegate
     func handleBridgeMessage(_ body: Any) {
         guard let message = body as? String else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            if message == "ready" {
+            if message == "videoClicked" {
+                self.onVideoClicked?()
+            } else if message == "ready" {
                 self.isReady = true
                 self.loadingIndicator.stopAnimation(nil)
                 self.loadingLabel.isHidden = true
@@ -307,6 +567,9 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
                     self.play()
                 } else {
                     self.pause()
+                }
+                if self.isMuted {
+                    self.setMuted(true)
                 }
             } else if message == "state_1" { // Playing
                 self.isPlaying = true
@@ -320,7 +583,6 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
                 self.shouldBePlaying = false
                 self.onPlaybackStateChanged?(false)
             } else if message.hasPrefix("progress_") {
-                // Format: progress_CURRENT_DURATION_VOLUME_MUTED
                 let parts = message.dropFirst("progress_".count).split(separator: "_")
                 if parts.count >= 4 {
                     if let cur = Double(parts[0]), let dur = Double(parts[1]), let vol = Int(parts[2]), let muted = Int(parts[3]) {
@@ -332,87 +594,25 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate {
                         self.onProgressUpdated?(cur, self.duration)
                     }
                 }
-            } else if message.hasPrefix("error_") {
-                // Video embedding restricted by copyright holder (e.g. error 150/101)
-                self.loadingIndicator.stopAnimation(nil)
-                self.loadingLabel.stringValue = "Thumbnail View (Author restricted embedding)"
-                self.fallbackImageView.isHidden = false
             }
         }
     }
     
-    private func generatePlayerHTML(videoId: String, startSeconds: Double = 0) -> String {
-        let startVal = max(0, Int(startSeconds))
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-        <style>
-        * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
-        body, html { width:100%; height:100%; overflow:hidden; background:#0d0d11; display:flex; align-items:center; justify-content:center; }
-        #player, iframe { width:100vw; height:100vh; object-fit:cover; pointer-events:none !important; border:none; }
-        </style>
-        </head>
-        <body>
-        <div id="player"></div>
-        <script src="https://www.youtube.com/iframe_api"></script>
-        <script>
-        var player;
-        var progressInterval = null;
-        function onYouTubeIframeAPIReady() {
-          player = new YT.Player('player', {
-            videoId: '\(videoId)',
-            playerVars: {
-              'autoplay': 1,
-              'mute': 1,
-              'controls': 0,
-              'playsinline': 1,
-              'loop': 1,
-              'start': \(startVal),
-              'playlist': '\(videoId)',
-              'disablekb': 1,
-              'fs': 0,
-              'rel': 0,
-              'modestbranding': 1,
-              'iv_load_policy': 3,
-              'origin': 'https://www.youtube-nocookie.com'
-            },
-            events: {
-              'onReady': function(e) {
-                window.webkit.messageHandlers.playerBridge.postMessage("ready");
-                e.target.mute();
-                if (\(startVal) > 0) {
-                  try { e.target.seekTo(\(startVal), true); } catch(err) {}
-                }
-                e.target.playVideo();
-                
-                if (!progressInterval) {
-                  progressInterval = setInterval(function() {
-                    if (player && player.getCurrentTime) {
-                      try {
-                        var cur = player.getCurrentTime() || 0;
-                        var dur = player.getDuration() || 0;
-                        var vol = player.getVolume ? player.getVolume() : 100;
-                        var muted = player.isMuted ? (player.isMuted() ? 1 : 0) : 1;
-                        window.webkit.messageHandlers.playerBridge.postMessage("progress_" + cur.toFixed(1) + "_" + dur.toFixed(1) + "_" + vol + "_" + muted);
-                      } catch(err) {}
-                    }
-                  }, 250);
-                }
-              },
-              'onStateChange': function(e) {
-                window.webkit.messageHandlers.playerBridge.postMessage("state_" + e.data);
-              },
-              'onError': function(e) {
-                window.webkit.messageHandlers.playerBridge.postMessage("error_" + e.data);
-              }
-            }
-          });
+    // MARK: - WKNavigationDelegate
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Enforce muted state if needed
+        if isMuted {
+            setMuted(true)
         }
-        </script>
-        </body>
-        </html>
-        """
+    }
+    
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        loadingIndicator.stopAnimation(nil)
+        fallbackImageView.isHidden = false
+    }
+    
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        loadingIndicator.stopAnimation(nil)
+        fallbackImageView.isHidden = false
     }
 }

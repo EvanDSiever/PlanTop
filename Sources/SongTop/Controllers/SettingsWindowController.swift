@@ -47,6 +47,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     // Browser Status Container
     private let browsersStack = NSStackView()
+    private var loginWindowController: YouTubeLoginWindowController?
     
     public var onWindowClosed: (() -> Void)?
     
@@ -303,59 +304,70 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         currentY += 94 + 14
         
         // 6. Live Video Playback & Picture-in-Picture Card
-        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 240))
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 288))
         container.addSubview(videoCard)
         
         let videoTitle = NSTextField(labelWithString: "Live Video Playback & Picture-in-Picture (PiP)")
         videoTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        videoTitle.frame = NSRect(x: 14, y: 212, width: 380, height: 16)
+        videoTitle.frame = NSRect(x: 14, y: 260, width: 380, height: 16)
         videoCard.addSubview(videoTitle)
         
-        videoPreviewCheckbox.frame = NSRect(x: 14, y: 186, width: 450, height: 18)
+        videoPreviewCheckbox.frame = NSRect(x: 14, y: 234, width: 450, height: 18)
         videoPreviewCheckbox.target = self
         videoPreviewCheckbox.action = #selector(videoPreviewToggled)
         videoCard.addSubview(videoPreviewCheckbox)
         
-        pipCheckbox.frame = NSRect(x: 14, y: 162, width: 450, height: 18)
+        pipCheckbox.frame = NSRect(x: 14, y: 210, width: 450, height: 18)
         pipCheckbox.target = self
         pipCheckbox.action = #selector(pipCheckboxToggled)
         videoCard.addSubview(pipCheckbox)
         
-        pipAudioCheckbox.frame = NSRect(x: 14, y: 138, width: 450, height: 18)
+        pipAudioCheckbox.frame = NSRect(x: 14, y: 186, width: 450, height: 18)
         pipAudioCheckbox.target = self
         pipAudioCheckbox.action = #selector(pipAudioCheckboxToggled)
         videoCard.addSubview(pipAudioCheckbox)
         
-        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 114, width: 450, height: 18)
+        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 162, width: 450, height: 18)
         pipSyncBackCheckbox.target = self
         pipSyncBackCheckbox.action = #selector(pipSyncBackCheckboxToggled)
         videoCard.addSubview(pipSyncBackCheckbox)
         
-        nativePiPCompanionCheckbox.frame = NSRect(x: 14, y: 90, width: 450, height: 18)
+        nativePiPCompanionCheckbox.frame = NSRect(x: 14, y: 138, width: 450, height: 18)
         nativePiPCompanionCheckbox.target = self
         nativePiPCompanionCheckbox.action = #selector(nativePiPCompanionToggled)
         videoCard.addSubview(nativePiPCompanionCheckbox)
         
-        pinCheckbox.frame = NSRect(x: 14, y: 64, width: 450, height: 18)
+        pinCheckbox.frame = NSRect(x: 14, y: 112, width: 450, height: 18)
         pinCheckbox.target = self
         pinCheckbox.action = #selector(pinCheckboxToggled)
         videoCard.addSubview(pinCheckbox)
         
         let pwLabel = NSTextField(labelWithString: "Panel Width:")
         pwLabel.font = NSFont.systemFont(ofSize: 11)
-        pwLabel.frame = NSRect(x: 14, y: 30, width: 85, height: 16)
+        pwLabel.frame = NSRect(x: 14, y: 82, width: 85, height: 16)
         videoCard.addSubview(pwLabel)
         
         panelWidthSlider.isContinuous = true
-        panelWidthSlider.frame = NSRect(x: 105, y: 28, width: 290, height: 20)
+        panelWidthSlider.frame = NSRect(x: 105, y: 80, width: 290, height: 20)
         panelWidthSlider.target = self
         panelWidthSlider.action = #selector(panelWidthSliderChanged)
         videoCard.addSubview(panelWidthSlider)
         
         panelWidthValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         panelWidthValueLabel.alignment = .right
-        panelWidthValueLabel.frame = NSRect(x: 400, y: 30, width: 65, height: 16)
+        panelWidthValueLabel.frame = NSRect(x: 400, y: 82, width: 65, height: 16)
         videoCard.addSubview(panelWidthValueLabel)
+        
+        let signInButton = NSButton(title: "👤 Sign In to YouTube (Premium / Personal Account)", target: self, action: #selector(openYouTubeLogin))
+        signInButton.bezelStyle = .rounded
+        signInButton.frame = NSRect(x: 14, y: 48, width: 335, height: 26)
+        videoCard.addSubview(signInButton)
+        
+        let premiumHint = NSTextField(labelWithString: "✨ Signed-in accounts get 0 ads (YouTube Premium) & sync watch history.")
+        premiumHint.font = NSFont.systemFont(ofSize: 10)
+        premiumHint.textColor = .secondaryLabelColor
+        premiumHint.frame = NSRect(x: 14, y: 28, width: 450, height: 14)
+        videoCard.addSubview(premiumHint)
         
         let dragTip = NSTextField(labelWithString: "💡 Tip: You can also drag the left edge of the side panel to resize it interactively!")
         dragTip.font = NSFont.systemFont(ofSize: 10)
@@ -363,7 +375,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         dragTip.frame = NSRect(x: 14, y: 8, width: 450, height: 14)
         videoCard.addSubview(dragTip)
         
-        currentY += 240 + 14
+        currentY += 288 + 14
         
         // 7. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 54))
@@ -551,5 +563,12 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func menuBarTitleToggled() {
         menuBarController.showTitleInMenuBar = (menuBarTitleCheckbox.state == .on)
+    }
+    
+    @objc private func openYouTubeLogin() {
+        if loginWindowController == nil {
+            loginWindowController = YouTubeLoginWindowController()
+        }
+        loginWindowController?.show()
     }
 }
