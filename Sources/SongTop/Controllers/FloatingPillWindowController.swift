@@ -290,6 +290,12 @@ public final class FloatingPillWindowController: NSObject {
             name: .songTopTabTelemetryUpdated,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onAvailableTracksChanged),
+            name: .songTopAvailableTracksChanged,
+            object: nil
+        )
     }
     
     deinit {
@@ -315,6 +321,17 @@ public final class FloatingPillWindowController: NSObject {
                 paused: self.detector.tabIsPaused,
                 vol: self.detector.tabVolume,
                 muted: self.detector.tabIsMuted
+            )
+        }
+    }
+    
+    @objc private func onAvailableTracksChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pillView?.updateAvailableTracks(
+                self.detector.availableTracks,
+                selectedTrack: self.detector.currentTrack,
+                isAuto: self.detector.isAutoTracking
             )
         }
     }
@@ -671,6 +688,9 @@ public final class FloatingPillWindowController: NSObject {
         pv.isPinned = isPinned
         pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
         pv.isVideoPreviewEnabled = isVideoPreviewEnabled
+        pv.onSelectTrack = { [weak detector] track in
+            detector?.selectTrack(track)
+        }
         pv.onOpenTab = { [weak self, weak detector, weak pv] in
             guard let self = self else { return }
             if let t = detector?.currentTrack {
@@ -757,6 +777,7 @@ public final class FloatingPillWindowController: NSObject {
         pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
         let currentSec: Double? = detector.tabCurrentTime > 0 ? detector.tabCurrentTime : nil
         pv.update(with: track, initialSeconds: currentSec)
+        pv.updateAvailableTracks(detector.availableTracks, selectedTrack: track, isAuto: detector.isAutoTracking)
         if isPiPActive && isPiPAudioTransferEnabled {
             pv.setPiPAudio(enabled: true)
         }
@@ -776,6 +797,7 @@ public final class FloatingPillWindowController: NSObject {
         pv.isNativePiPActive = (detector.isNativePiPActive && isNativePiPCompanionEnabled)
         let currentSec: Double? = detector.tabCurrentTime > 0 ? detector.tabCurrentTime : nil
         pv.update(with: detector.currentTrack, initialSeconds: currentSec)
+        pv.updateAvailableTracks(detector.availableTracks, selectedTrack: detector.currentTrack, isAuto: detector.isAutoTracking)
         if isPiPActive && isPiPAudioTransferEnabled {
             pv.setPiPAudio(enabled: true)
         }

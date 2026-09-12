@@ -8,12 +8,14 @@ public struct TrackInfo: Equatable, Identifiable {
     public let url: String
     public let browser: String
     public let isPlaying: Bool
+    public let isActiveTab: Bool
     
-    public init(rawTitle: String, url: String, browser: String, isPlaying: Bool = true) {
+    public init(rawTitle: String, url: String, browser: String, isPlaying: Bool = true, isActiveTab: Bool = false) {
         self.rawTitle = rawTitle
         self.url = url
         self.browser = browser
         self.isPlaying = isPlaying
+        self.isActiveTab = isActiveTab
         
         let cleaned = TrackInfo.cleanRawTitle(rawTitle)
         let parsed = TrackInfo.parseArtistAndTitle(cleaned)

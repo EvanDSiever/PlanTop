@@ -34,6 +34,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             name: .songTopSettingsChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onAvailableTracksChanged),
+            name: .songTopAvailableTracksChanged,
+            object: nil
+        )
     }
     
     deinit {
@@ -50,6 +56,13 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
                 }
             }
             self.updateDisplay()
+            self.buildMenu(track: self.detector.currentTrack)
+        }
+    }
+    
+    @objc private func onAvailableTracksChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             self.buildMenu(track: self.detector.currentTrack)
         }
     }
@@ -224,6 +237,36 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         syncMenuItem.image = NSImage(systemSymbolName: "slider.horizontal.below.rectangle", accessibilityDescription: nil)
         menu.addItem(syncMenuItem)
         
+        // Active YouTube Tabs Submenu (When multiple tabs exist)
+        if detector.availableTracks.count > 1 {
+            let tabsSubmenu = NSMenu()
+            
+            let autoItem = NSMenuItem(title: "⚡ Auto (Follow Active Tab)", action: #selector(menuBarSelectAutoTrack), keyEquivalent: "")
+            autoItem.target = self
+            autoItem.state = detector.isAutoTracking ? .on : .off
+            tabsSubmenu.addItem(autoItem)
+            tabsSubmenu.addItem(NSMenuItem.separator())
+            
+            for (index, t) in detector.availableTracks.enumerated() {
+                let activeTag = t.isActiveTab ? " • Active" : ""
+                let tTitle = t.title.isEmpty ? t.rawTitle : t.title
+                let truncated = tTitle.count > 34 ? String(tTitle.prefix(32)) + "…" : tTitle
+                let itemTitle = "[\(t.browser)] \(truncated)\(activeTag)"
+                
+                let item = NSMenuItem(title: itemTitle, action: #selector(menuBarSelectSpecificTrack(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = index
+                let isCurrent = (detector.currentTrack?.url == t.url || (detector.currentTrack?.youtubeVideoId != nil && detector.currentTrack?.youtubeVideoId == t.youtubeVideoId))
+                item.state = (!detector.isAutoTracking && isCurrent) ? .on : .off
+                tabsSubmenu.addItem(item)
+            }
+            
+            let tabsItem = NSMenuItem(title: "Active YouTube Tabs (\(detector.availableTracks.count))", action: nil, keyEquivalent: "")
+            tabsItem.image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: nil)
+            tabsItem.submenu = tabsSubmenu
+            menu.addItem(tabsItem)
+        }
+        
         menu.addItem(NSMenuItem.separator())
         
         // Settings / Preferences
@@ -382,6 +425,18 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         guard let ms = sender.representedObject as? Double else { return }
         UserDefaults.standard.set(ms, forKey: "songtop_av_sync_delay_ms")
         NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+    }
+    
+    @objc private func menuBarSelectAutoTrack() {
+        detector.selectTrack(nil)
+        buildMenu(track: detector.currentTrack)
+    }
+    
+    @objc private func menuBarSelectSpecificTrack(_ sender: NSMenuItem) {
+        guard sender.tag >= 0 && sender.tag < detector.availableTracks.count else { return }
+        let track = detector.availableTracks[sender.tag]
+        detector.selectTrack(track)
+        buildMenu(track: track)
     }
     
     @objc private func quitClicked() {

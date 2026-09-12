@@ -97,6 +97,10 @@ public final class FloatingPillView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
     private let browserBadge = NSTextField(labelWithString: "")
+    private let tabPickerButton = NSButton()
+    public var availableTracks: [TrackInfo] = []
+    public var isAutoTracking: Bool = true
+    public var onSelectTrack: ((TrackInfo?) -> Void)?
     private let pipBadge = NSTextField(labelWithString: " 📺 PiP Active ")
     public var isNativePiPActive: Bool = false {
         didSet {
@@ -172,8 +176,8 @@ public final class FloatingPillView: NSView {
         visualEffectView.layer?.cornerRadius = 18
         visualEffectView.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         visualEffectView.layer?.masksToBounds = true
-        visualEffectView.layer?.borderWidth = 1.2
-        visualEffectView.layer?.borderColor = NSColor(white: 1.0, alpha: 0.22).cgColor
+        visualEffectView.layer?.borderWidth = 0.0
+        visualEffectView.layer?.borderColor = NSColor.clear.cgColor
         visualEffectView.appearance = NSAppearance(named: .darkAqua)
         clipContainer.addSubview(visualEffectView)
         
@@ -308,6 +312,19 @@ public final class FloatingPillView: NSView {
         browserBadge.layer?.masksToBounds = true
         visualEffectView.addSubview(browserBadge)
         
+        // Multi-Tab Selection Badge Button
+        tabPickerButton.isBordered = false
+        tabPickerButton.wantsLayer = true
+        tabPickerButton.layer?.cornerRadius = 4
+        tabPickerButton.layer?.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.28).cgColor
+        tabPickerButton.font = NSFont.systemFont(ofSize: 9.5, weight: .bold)
+        tabPickerButton.contentTintColor = NSColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1.0)
+        tabPickerButton.toolTip = "Switch Active YouTube Video"
+        tabPickerButton.target = self
+        tabPickerButton.action = #selector(handleTabPickerClicked)
+        tabPickerButton.isHidden = true
+        visualEffectView.addSubview(tabPickerButton)
+        
         // Native PiP Active Badge
         pipBadge.isBezeled = false
         pipBadge.drawsBackground = true
@@ -403,6 +420,73 @@ public final class FloatingPillView: NSView {
         syncDrawerContainer.addSubview(presetPlus100Button)
         
         loadInitialSyncDelay()
+    }
+    
+    // MARK: - Multi-Tab Selection Menu & Actions
+    @objc private func handleTabPickerClicked(_ sender: NSButton) {
+        let menu = NSMenu(title: "Active YouTube Tabs")
+        
+        let count = availableTracks.count
+        let headerItem = NSMenuItem(title: "Active YouTube Tabs (\(count))", action: nil, keyEquivalent: "")
+        headerItem.isEnabled = false
+        menu.addItem(headerItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let autoItem = NSMenuItem(title: "⚡ Auto (Follow Active Tab)", action: #selector(handleSelectAutoTrack), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.state = isAutoTracking ? .on : .off
+        menu.addItem(autoItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        for (index, track) in availableTracks.enumerated() {
+            let activeTag = track.isActiveTab ? " • Active" : ""
+            let trackName = track.title.isEmpty ? track.rawTitle : track.title
+            let display = trackName.count > 38 ? String(trackName.prefix(35)) + "…" : trackName
+            let itemTitle = "[\(track.browser)] \(display)\(activeTag)"
+            
+            let item = NSMenuItem(title: itemTitle, action: #selector(handleSelectSpecificTrack(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.toolTip = "\(track.title)\n\(track.url)"
+            
+            let isCurrent = (currentTrack?.url == track.url || (currentTrack?.youtubeVideoId != nil && currentTrack?.youtubeVideoId == track.youtubeVideoId))
+            item.state = (!isAutoTracking && isCurrent) ? .on : .off
+            menu.addItem(item)
+        }
+        
+        let location = NSPoint(x: 0, y: sender.bounds.height + 4)
+        menu.popUp(positioning: nil, at: location, in: sender)
+    }
+    
+    @objc private func handleSelectAutoTrack() {
+        isAutoTracking = true
+        onSelectTrack?(nil)
+    }
+    
+    @objc private func handleSelectSpecificTrack(_ sender: NSMenuItem) {
+        guard sender.tag >= 0 && sender.tag < availableTracks.count else { return }
+        let track = availableTracks[sender.tag]
+        isAutoTracking = false
+        onSelectTrack?(track)
+    }
+    
+    public func updateAvailableTracks(_ tracks: [TrackInfo], selectedTrack: TrackInfo?, isAuto: Bool) {
+        self.availableTracks = tracks
+        self.isAutoTracking = isAuto
+        
+        if tracks.count > 1 {
+            tabPickerButton.isHidden = false
+            tabPickerButton.title = " ⧉ \(tracks.count) Tabs ▾ "
+            tabPickerButton.toolTip = "\(tracks.count) YouTube tabs open. Click to switch video display."
+            tabPickerButton.sizeToFit()
+            tabPickerButton.frame.size.width = max(68, tabPickerButton.frame.size.width + 6)
+            tabPickerButton.frame.size.height = 14
+        } else {
+            tabPickerButton.isHidden = true
+        }
+        needsLayout = true
     }
     
     // Left Edge Drag-Resize Cursor Support
@@ -601,8 +685,13 @@ public final class FloatingPillView: NSView {
             let textLeft = badgeContainer.frame.maxX + 8
             let textWidth = max(50, pipBadge.frame.minX - textLeft - 6)
             titleLabel.frame = NSRect(x: textLeft, y: row1Y + 12, width: textWidth, height: 16)
-            artistLabel.frame = NSRect(x: textLeft, y: row1Y - 2, width: max(40, textWidth - 55), height: 14)
-            browserBadge.frame = NSRect(x: textLeft + max(40, textWidth - 55) + 4, y: row1Y - 2, width: 45, height: 13)
+            let artistWidth = min(textWidth - 55, 120)
+            artistLabel.frame = NSRect(x: textLeft, y: row1Y - 2, width: max(30, artistWidth), height: 14)
+            browserBadge.frame = NSRect(x: textLeft + max(30, artistWidth) + 4, y: row1Y - 2, width: 45, height: 13)
+            if !tabPickerButton.isHidden {
+                let pickerW = max(68, tabPickerButton.frame.width)
+                tabPickerButton.frame = NSRect(x: browserBadge.frame.maxX + 4, y: row1Y - 3, width: pickerW, height: 15)
+            }
             
             // Row 2 (Middle: Scrubber): y = row1Y - 32
             let scrubberY = row1Y - 32
@@ -692,8 +781,13 @@ public final class FloatingPillView: NSView {
             let textLeft = badgeContainer.frame.maxX + 8
             let textWidth = max(50, bounds.width - textLeft - padRight)
             titleLabel.frame = NSRect(x: textLeft, y: metaY + 12, width: textWidth, height: 16)
-            artistLabel.frame = NSRect(x: textLeft, y: metaY - 1, width: max(40, textWidth - 55), height: 14)
-            browserBadge.frame = NSRect(x: textLeft + max(40, textWidth - 55) + 4, y: metaY, width: 45, height: 13)
+            let artistWidth = min(textWidth - 55, 120)
+            artistLabel.frame = NSRect(x: textLeft, y: metaY - 1, width: max(30, artistWidth), height: 14)
+            browserBadge.frame = NSRect(x: textLeft + max(30, artistWidth) + 4, y: metaY, width: 45, height: 13)
+            if !tabPickerButton.isHidden {
+                let pickerW = max(68, tabPickerButton.frame.width)
+                tabPickerButton.frame = NSRect(x: browserBadge.frame.maxX + 4, y: metaY - 1, width: pickerW, height: 15)
+            }
             
             layoutSyncDrawer(padLeft: padLeft, padRight: padRight)
         } else {
@@ -738,6 +832,10 @@ public final class FloatingPillView: NSView {
                 let titleWidth = min(availableWidth - badgeWidth - 6, 280)
                 titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: titleWidth, height: 18)
                 browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (bounds.height / 2) + 2, width: badgeWidth, height: 16)
+                if !tabPickerButton.isHidden {
+                    let pickerW = max(68, tabPickerButton.frame.width)
+                    tabPickerButton.frame = NSRect(x: browserBadge.frame.maxX + 6, y: (bounds.height / 2) + 2, width: pickerW, height: 16)
+                }
             }
             
             artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 18, width: availableWidth, height: 16)

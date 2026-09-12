@@ -5,10 +5,15 @@ extension Notification.Name {
     public static let songTopNativePiPChanged = Notification.Name("com.songtop.nativePiPChanged")
     public static let songTopTabTelemetryUpdated = Notification.Name("com.songtop.tabTelemetryUpdated")
     public static let songTopTabAutomationChanged = Notification.Name("com.songtop.tabAutomationChanged")
+    public static let songTopAvailableTracksChanged = Notification.Name("com.songtop.availableTracksChanged")
 }
 
 public final class YouTubeDetector: ObservableObject {
     @Published public private(set) var currentTrack: TrackInfo?
+    @Published public private(set) var availableTracks: [TrackInfo] = []
+    @Published public var selectedTrackURL: String? = nil
+    @Published public var isAutoTracking: Bool = true
+    
     @Published public private(set) var isDetecting: Bool = false
     @Published public private(set) var isNativePiPActive: Bool = false
     @Published public private(set) var nativePiPBounds: CGRect?
@@ -54,6 +59,28 @@ public final class YouTubeDetector: ObservableObject {
         isDetecting = false
     }
     
+    public func selectTrack(_ track: TrackInfo?) {
+        let updateBlock = { [weak self] in
+            guard let self = self else { return }
+            if let t = track {
+                self.isAutoTracking = false
+                self.selectedTrackURL = t.url
+                self.currentTrack = t
+                self.pollTabPlaybackState(track: t, completion: nil)
+            } else {
+                self.isAutoTracking = true
+                self.selectedTrackURL = nil
+                self.checkNow()
+            }
+            NotificationCenter.default.post(name: .songTopAvailableTracksChanged, object: nil)
+        }
+        if Thread.isMainThread {
+            updateBlock()
+        } else {
+            DispatchQueue.main.async(execute: updateBlock)
+        }
+    }
+    
     public static func checkNativePiPWindow() -> (isActive: Bool, bounds: CGRect?) {
         guard let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
             return (false, nil)
@@ -77,19 +104,57 @@ public final class YouTubeDetector: ObservableObject {
     
     public func checkNow() {
         let pipInfo = YouTubeDetector.checkNativePiPWindow()
-        let detected = detectFromRunningBrowsers()
+        let detectedList = detectFromRunningBrowsers()
+        
+        let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName
+        
+        // Determine chosen track based on pinned selection or auto-tracking
+        var chosenTrack: TrackInfo? = nil
+        
+        if !self.isAutoTracking, let selURL = self.selectedTrackURL {
+            chosenTrack = detectedList.first(where: {
+                $0.url == selURL || ($0.youtubeVideoId != nil && $0.youtubeVideoId == TrackInfo(rawTitle: "", url: selURL, browser: "").youtubeVideoId)
+            })
+            if chosenTrack == nil {
+                // Pinned tab was closed or navigated away: revert to auto
+                self.isAutoTracking = true
+                self.selectedTrackURL = nil
+            }
+        }
+        
+        if chosenTrack == nil {
+            // Auto tracking:
+            // 1. Active tab in frontmost browser application
+            if let front = frontApp, let activeFront = detectedList.first(where: { $0.browser == front && $0.isActiveTab }) {
+                chosenTrack = activeFront
+            } else if let anyActive = detectedList.first(where: { $0.isActiveTab }) {
+                // 2. Active tab in any running browser
+                chosenTrack = anyActive
+            } else {
+                // 3. First available YouTube tab
+                chosenTrack = detectedList.first
+            }
+        }
         
         let updateBlock = {
+            let tracksChanged = (self.availableTracks != detectedList)
+            if tracksChanged {
+                self.availableTracks = detectedList
+            }
+            
             if self.isNativePiPActive != pipInfo.isActive {
                 self.isNativePiPActive = pipInfo.isActive
                 self.nativePiPBounds = pipInfo.bounds
                 NotificationCenter.default.post(name: .songTopNativePiPChanged, object: nil)
             }
-            if self.currentTrack != detected {
-                self.currentTrack = detected
-                if let t = detected {
+            if self.currentTrack != chosenTrack {
+                self.currentTrack = chosenTrack
+                if let t = chosenTrack {
                     self.pollTabPlaybackState(track: t, completion: nil)
                 }
+            }
+            if tracksChanged {
+                NotificationCenter.default.post(name: .songTopAvailableTracksChanged, object: nil)
             }
         }
         
@@ -105,7 +170,7 @@ public final class YouTubeDetector: ObservableObject {
         pollTabPlaybackState(track: track, completion: nil)
     }
     
-    public func detectFromRunningBrowsers() -> TrackInfo? {
+    public func detectFromRunningBrowsers() -> [TrackInfo] {
         let runningApps = NSWorkspace.shared.runningApplications
         let runningNames = Set(runningApps.compactMap { $0.localizedName })
         
@@ -119,6 +184,9 @@ public final class YouTubeDetector: ObservableObject {
             ("Opera", YouTubeDetector.buildChromiumScript)
         ]
         
+        var allTracks: [TrackInfo] = []
+        var seenURLs = Set<String>()
+        
         for browser in supportedBrowsers {
             if runningNames.contains(browser.name) {
                 let scriptSource = browser.scriptGenerator(browser.name)
@@ -126,19 +194,28 @@ public final class YouTubeDetector: ObservableObject {
                     var errorDict: NSDictionary?
                     let result = script.executeAndReturnError(&errorDict)
                     if let output = result.stringValue, output != "NONE" && !output.isEmpty {
-                        let parts = output.components(separatedBy: "|||")
-                        if parts.count >= 3 {
-                            let rawTitle = parts[0]
-                            let url = parts[1]
-                            let bName = parts[2]
-                            return TrackInfo(rawTitle: rawTitle, url: url, browser: bName, isPlaying: true)
+                        let entries = output.components(separatedBy: "###")
+                        for entry in entries {
+                            let parts = entry.components(separatedBy: "|||")
+                            if parts.count >= 3 {
+                                let rawTitle = parts[0]
+                                let url = parts[1]
+                                let bName = parts[2]
+                                let isAct = (parts.count >= 4 && parts[3].lowercased() == "true")
+                                
+                                if !seenURLs.contains(url) {
+                                    seenURLs.insert(url)
+                                    let info = TrackInfo(rawTitle: rawTitle, url: url, browser: bName, isPlaying: true, isActiveTab: isAct)
+                                    allTracks.append(info)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
         
-        return nil
+        return allTracks
     }
     
     public func isUserActiveOnYouTubeTab() -> Bool {
@@ -622,21 +699,23 @@ public final class YouTubeDetector: ObservableObject {
         return """
         tell application "\(browserName)"
             try
+                set outList to {}
                 repeat with w in windows
-                    set aTab to active tab of w
-                    set aURL to URL of aTab
-                    if aURL contains "youtube.com/watch" or aURL contains "music.youtube.com" then
-                        return (title of aTab) & "|||" & aURL & "|||\(browserName)"
-                    end if
-                end repeat
-                repeat with w in windows
+                    set actTab to active tab of w
+                    set actURL to URL of actTab
                     repeat with t in tabs of w
                         set u to URL of t
-                        if u contains "youtube.com/watch" or u contains "music.youtube.com" then
-                            return (title of t) & "|||" & u & "|||\(browserName)"
+                        if u contains "youtube.com/watch" or u contains "music.youtube.com" or u contains "youtube.com/shorts" then
+                            set isAct to (u is equal to actURL)
+                            set end of outList to ((title of t) & "|||" & u & "|||\(browserName)|||" & (isAct as string))
                         end if
                     end repeat
                 end repeat
+                if (count of outList) is 0 then
+                    return "NONE"
+                end if
+                set AppleScript's text item delimiters to "###"
+                return outList as text
             end try
             return "NONE"
         end tell
@@ -647,21 +726,23 @@ public final class YouTubeDetector: ObservableObject {
         return """
         tell application "Safari"
             try
+                set outList to {}
                 repeat with w in windows
-                    set aTab to current tab of w
-                    set aURL to URL of aTab
-                    if aURL contains "youtube.com/watch" or aURL contains "music.youtube.com" then
-                        return (name of aTab) & "|||" & aURL & "|||Safari"
-                    end if
-                end repeat
-                repeat with w in windows
+                    set actTab to current tab of w
+                    set actURL to URL of actTab
                     repeat with t in tabs of w
                         set u to URL of t
-                        if u contains "youtube.com/watch" or u contains "music.youtube.com" then
-                            return (name of t) & "|||" & u & "|||Safari"
+                        if u contains "youtube.com/watch" or u contains "music.youtube.com" or u contains "youtube.com/shorts" then
+                            set isAct to (u is equal to actURL)
+                            set end of outList to ((name of t) & "|||" & u & "|||Safari|||" & (isAct as string))
                         end if
                     end repeat
                 end repeat
+                if (count of outList) is 0 then
+                    return "NONE"
+                end if
+                set AppleScript's text item delimiters to "###"
+                return outList as text
             end try
             return "NONE"
         end tell
