@@ -1,5 +1,15 @@
 import AppKit
 
+extension Notification.Name {
+    public static let songTopSettingsChanged = Notification.Name("com.songtop.settingsChanged")
+}
+
+public enum DisplayMode: Int {
+    case hoverDropdown = 0
+    case alwaysFloating = 1
+    case menuBarOnly = 2
+}
+
 public final class FloatingPillWindowController: NSObject {
     private var pillPanel: NSPanel?
     private var pillView: FloatingPillView?
@@ -10,6 +20,17 @@ public final class FloatingPillWindowController: NSObject {
     private let mouseQueue = DispatchQueue(label: "com.songtop.mousetracker", qos: .userInteractive)
     
     private var retractTimer: Timer?
+    private var hoverStartTime: Date?
+    
+    // Cached frame for thread-safe access from mouseQueue
+    private var cachedPillRect: NSRect = .zero
+    private var isPillVisibleInternal: Bool = false
+    
+    // Trigger zone visual guide panel
+    private var guidePanel: NSPanel?
+    private var guideLabel: NSTextField?
+    private var guideHideTimer: Timer?
+    public private(set) var isGuidePinned: Bool = false
     
     public private(set) var isDroppedDown: Bool = false
     private var isHoveringActive: Bool = false
@@ -24,6 +45,11 @@ public final class FloatingPillWindowController: NSObject {
     public var scanHeight: CGFloat = 75 {
         didSet {
             UserDefaults.standard.set(Double(scanHeight), forKey: "scanHeight")
+        }
+    }
+    public var hoverDelay: Double = 0.0 {
+        didSet {
+            UserDefaults.standard.set(hoverDelay, forKey: "hoverDelay")
         }
     }
     public var peekDuration: Double = 5.0 {
@@ -49,6 +75,7 @@ public final class FloatingPillWindowController: NSObject {
                     dropDown()
                 }
             }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
         }
     }
     
@@ -60,6 +87,27 @@ public final class FloatingPillWindowController: NSObject {
             } else {
                 retract()
             }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    
+    public var displayMode: DisplayMode {
+        get {
+            if !isEnabled { return .menuBarOnly }
+            return hoverDropOnly ? .hoverDropdown : .alwaysFloating
+        }
+        set {
+            switch newValue {
+            case .hoverDropdown:
+                isEnabled = true
+                hoverDropOnly = true
+            case .alwaysFloating:
+                isEnabled = true
+                hoverDropOnly = false
+            case .menuBarOnly:
+                isEnabled = false
+            }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
         }
     }
     
@@ -78,6 +126,9 @@ public final class FloatingPillWindowController: NSObject {
         }
         if UserDefaults.standard.object(forKey: "scanHeight") != nil {
             self.scanHeight = CGFloat(UserDefaults.standard.double(forKey: "scanHeight"))
+        }
+        if UserDefaults.standard.object(forKey: "hoverDelay") != nil {
+            self.hoverDelay = UserDefaults.standard.double(forKey: "hoverDelay")
         }
         if UserDefaults.standard.object(forKey: "peekDuration") != nil {
             self.peekDuration = UserDefaults.standard.double(forKey: "peekDuration")
@@ -100,6 +151,7 @@ public final class FloatingPillWindowController: NSObject {
         NotificationCenter.default.removeObserver(self)
         stopMouseTracking()
         retractTimer?.invalidate()
+        guideHideTimer?.invalidate()
     }
     
     @objc private func screenParametersChanged() {
@@ -116,7 +168,7 @@ public final class FloatingPillWindowController: NSObject {
         guard isEnabled else { return }
         
         let timer = DispatchSource.makeTimerSource(queue: mouseQueue)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(50)) // 20 times a second
+        timer.schedule(deadline: .now(), repeating: .milliseconds(40)) // 25 times a second
         timer.setEventHandler { [weak self] in
             self?.checkMousePositionBackground()
         }
@@ -144,7 +196,7 @@ public final class FloatingPillWindowController: NSObject {
         // Comprehensive trigger zone respecting macOS Menu Bar settings:
         // - Spans from the absolute top of the screen (screenFrame.maxY)
         // - Reaches through the menu bar down into the visible frame by scanHeight
-        let effectiveWidth = min(scanWidth, screenFrame.width * 0.9)
+        let effectiveWidth = min(scanWidth, screenFrame.width * 0.95)
         let triggerTop = screenFrame.maxY
         let triggerBottom = visibleFrame.maxY - scanHeight
         let triggerRect = NSRect(
@@ -154,34 +206,48 @@ public final class FloatingPillWindowController: NSObject {
             height: triggerTop - triggerBottom
         )
         
-        // Pill area when dropped down
-        var pillRect: NSRect = .zero
-        var currentDroppedDown = false
+        let inTrigger = NSPointInRect(mouse, triggerRect)
+        let inPill = isPillVisibleInternal && NSPointInRect(mouse, cachedPillRect)
         
-        DispatchQueue.main.sync {
-            currentDroppedDown = self.isDroppedDown
-            if let panel = self.pillPanel, currentDroppedDown {
-                // Add comfortable 40px margin around the pill
-                pillRect = panel.frame.insetBy(dx: -40, dy: -30)
+        // Update guide live indicator if active
+        if isGuidePinned || (guidePanel != nil && guidePanel!.alphaValue > 0.05) {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateGuideAppearance(isInside: inTrigger)
             }
         }
         
-        let inTrigger = NSPointInRect(mouse, triggerRect)
-        let inPill = currentDroppedDown && NSPointInRect(mouse, pillRect)
-        let shouldBeOpen = inTrigger || inPill
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        if inTrigger {
+            if hoverDelay > 0.01 {
+                if hoverStartTime == nil {
+                    hoverStartTime = Date()
+                }
+                let elapsed = Date().timeIntervalSince(hoverStartTime!)
+                if elapsed < hoverDelay {
+                    return
+                }
+            }
             
-            if shouldBeOpen {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
                 self.retractTimer?.invalidate()
                 self.retractTimer = nil
                 self.isHoveringActive = true
-                
                 if !self.isDroppedDown {
                     self.dropDown()
                 }
-            } else {
+            }
+        } else if inPill {
+            hoverStartTime = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.retractTimer?.invalidate()
+                self.retractTimer = nil
+                self.isHoveringActive = true
+            }
+        } else {
+            hoverStartTime = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
                 if self.isHoveringActive || self.isDroppedDown {
                     self.isHoveringActive = false
                     if self.retractTimer == nil {
@@ -192,6 +258,119 @@ public final class FloatingPillWindowController: NSObject {
                     }
                 }
             }
+        }
+    }
+    
+    public func toggleGuide() {
+        if isGuidePinned {
+            hideTriggerZoneGuide()
+        } else {
+            isGuidePinned = true
+            showTriggerZoneGuide(temporarily: false)
+        }
+    }
+    
+    public func hideTriggerZoneGuide() {
+        isGuidePinned = false
+        guideHideTimer?.invalidate()
+        guideHideTimer = nil
+        guard let panel = guidePanel else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            panel.animator().alphaValue = 0.0
+        }, completionHandler: {
+            panel.orderOut(nil)
+        })
+    }
+    
+    public func showTriggerZoneGuide(temporarily: Bool = true) {
+        let mouse = NSEvent.mouseLocation
+        let activeScreen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+        guard let screen = activeScreen else { return }
+        
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        
+        let effectiveWidth = min(scanWidth, screenFrame.width * 0.95)
+        let triggerTop = screenFrame.maxY
+        let triggerBottom = visibleFrame.maxY - scanHeight
+        let triggerHeight = triggerTop - triggerBottom
+        let targetRect = NSRect(
+            x: screenFrame.midX - (effectiveWidth / 2),
+            y: triggerBottom,
+            width: effectiveWidth,
+            height: triggerHeight
+        )
+        
+        if guidePanel == nil {
+            let panel = NSPanel(
+                contentRect: targetRect,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) + 2)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.ignoresMouseEvents = true
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            
+            let view = NSView(frame: NSRect(origin: .zero, size: targetRect.size))
+            view.wantsLayer = true
+            view.layer?.cornerRadius = 10
+            
+            let lbl = NSTextField(labelWithString: "")
+            lbl.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+            lbl.textColor = .white
+            lbl.alignment = .center
+            view.addSubview(lbl)
+            
+            panel.contentView = view
+            self.guideLabel = lbl
+            self.guidePanel = panel
+        }
+        
+        guard let panel = guidePanel else { return }
+        
+        panel.setFrame(targetRect, display: true)
+        panel.contentView?.frame = NSRect(origin: .zero, size: targetRect.size)
+        
+        let inTrigger = NSPointInRect(mouse, targetRect)
+        updateGuideAppearance(isInside: inTrigger)
+        
+        panel.orderFront(nil)
+        panel.animator().alphaValue = 1.0
+        
+        if temporarily && !isGuidePinned {
+            guideHideTimer?.invalidate()
+            guideHideTimer = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: false) { [weak self] _ in
+                guard let self = self, !self.isGuidePinned else { return }
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.25
+                    self.guidePanel?.animator().alphaValue = 0.0
+                }, completionHandler: {
+                    self.guidePanel?.orderOut(nil)
+                })
+            }
+        }
+    }
+    
+    private func updateGuideAppearance(isInside: Bool) {
+        guard let panel = guidePanel, let view = panel.contentView, let label = guideLabel else { return }
+        let targetRect = panel.frame
+        label.frame = NSRect(x: 0, y: max(4, (targetRect.height - 20) / 2), width: targetRect.width, height: 20)
+        
+        if isInside {
+            view.layer?.backgroundColor = NSColor(red: 0.15, green: 0.8, blue: 0.4, alpha: 0.32).cgColor
+            view.layer?.borderWidth = 2.0
+            view.layer?.borderColor = NSColor(red: 0.2, green: 0.95, blue: 0.45, alpha: 0.95).cgColor
+            label.stringValue = "🎯 Cursor Inside Hover Zone (Active!) — \(Int(scanWidth))px × \(Int(scanHeight))px"
+        } else {
+            view.layer?.backgroundColor = NSColor(red: 0.1, green: 0.55, blue: 1.0, alpha: 0.20).cgColor
+            view.layer?.borderWidth = 1.5
+            view.layer?.borderColor = NSColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.85).cgColor
+            label.stringValue = "🎯 Hover Zone: \(Int(scanWidth))px wide × \(Int(scanHeight))px reach"
         }
     }
     
@@ -291,12 +470,13 @@ public final class FloatingPillWindowController: NSObject {
         
         let visibleFrame = screen.visibleFrame
         let targetX = visibleFrame.midX - (fittingSize.width / 2)
-        // Anchor directly underneath the user's macOS Menu Bar (or screen top if menu bar is hidden)
+        // Anchor directly underneath the user's macOS Menu Bar
         let targetY = visibleFrame.maxY - fittingSize.height - 6
         
         isDroppedDown = true
+        isPillVisibleInternal = true
+        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
         
-        // Position on-screen within valid visible bounds (never place offscreen to avoid macOS WindowServer clamping bugs)
         panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
         panel.orderFront(nil)
         
@@ -310,6 +490,8 @@ public final class FloatingPillWindowController: NSObject {
     public func retract(immediately: Bool = false) {
         guard let panel = pillPanel, isDroppedDown || panel.isVisible else { return }
         isDroppedDown = false
+        isPillVisibleInternal = false
+        cachedPillRect = .zero
         retractTimer?.invalidate()
         retractTimer = nil
         
@@ -336,6 +518,7 @@ public final class FloatingPillWindowController: NSObject {
         let visibleFrame = screen.visibleFrame
         let targetX = visibleFrame.midX - (fittingSize.width / 2)
         let targetY = visibleFrame.maxY - fittingSize.height - 6
+        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
         panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }
 }

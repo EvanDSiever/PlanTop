@@ -6,7 +6,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private var detector: YouTubeDetector
     private var pillController: FloatingPillWindowController
     
-    private var showTitleInMenuBar: Bool = true {
+    public var showTitleInMenuBar: Bool = true {
         didSet {
             UserDefaults.standard.set(showTitleInMenuBar, forKey: "showTitleInMenuBar")
             updateDisplay()
@@ -27,6 +27,35 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         setupMenu()
         updateDisplay()
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onSettingsChanged),
+            name: .songTopSettingsChanged,
+            object: nil
+        )
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func onSettingsChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if UserDefaults.standard.object(forKey: "showTitleInMenuBar") != nil {
+                let saved = UserDefaults.standard.bool(forKey: "showTitleInMenuBar")
+                if self.showTitleInMenuBar != saved {
+                    self.showTitleInMenuBar = saved
+                }
+            }
+            self.updateDisplay()
+            self.buildMenu(track: self.detector.currentTrack)
+        }
+    }
+    
+    public func menuWillOpen(_ menu: NSMenu) {
+        buildMenu(track: detector.currentTrack)
     }
     
     public func update(track: TrackInfo?) {
@@ -157,7 +186,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         dropDownItem.target = self
-        dropDownItem.state = (pillController.isEnabled && pillController.hoverDropOnly) ? .on : .off
+        dropDownItem.state = (pillController.displayMode == .hoverDropdown) ? .on : .off
         menu.addItem(dropDownItem)
         
         let alwaysVisibleItem = NSMenuItem(
@@ -166,7 +195,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         alwaysVisibleItem.target = self
-        alwaysVisibleItem.state = (pillController.isEnabled && !pillController.hoverDropOnly) ? .on : .off
+        alwaysVisibleItem.state = (pillController.displayMode == .alwaysFloating) ? .on : .off
         menu.addItem(alwaysVisibleItem)
         
         let disablePillItem = NSMenuItem(
@@ -175,7 +204,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         disablePillItem.target = self
-        disablePillItem.state = (!pillController.isEnabled) ? .on : .off
+        disablePillItem.state = (pillController.displayMode == .menuBarOnly) ? .on : .off
         menu.addItem(disablePillItem)
         
         menu.addItem(NSMenuItem.separator())
@@ -254,24 +283,23 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
     
     @objc private func setHoverDropDownMode() {
-        pillController.isEnabled = true
-        pillController.hoverDropOnly = true
+        pillController.displayMode = .hoverDropdown
         buildMenu(track: detector.currentTrack)
     }
     
     @objc private func setAlwaysVisibleMode() {
-        pillController.isEnabled = true
-        pillController.hoverDropOnly = false
+        pillController.displayMode = .alwaysFloating
         buildMenu(track: detector.currentTrack)
     }
     
     @objc private func setDisabledMode() {
-        pillController.isEnabled = false
+        pillController.displayMode = .menuBarOnly
         buildMenu(track: detector.currentTrack)
     }
     
     @objc private func toggleShowTitle() {
         showTitleInMenuBar.toggle()
+        NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
         buildMenu(track: detector.currentTrack)
     }
     

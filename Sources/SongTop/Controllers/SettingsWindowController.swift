@@ -18,6 +18,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let widthValueLabel = NSTextField(labelWithString: "850 px")
     private let heightSlider = NSSlider(value: 75, minValue: 30, maxValue: 150, target: nil, action: nil)
     private let heightValueLabel = NSTextField(labelWithString: "75 px")
+    private let sensitivitySlider = NSSlider(value: 0.0, minValue: 0.0, maxValue: 0.35, target: nil, action: nil)
+    private let sensitivityValueLabel = NSTextField(labelWithString: "Instant (0.0s)")
+    private let guideButton = NSButton(title: "🎯 Highlight Zone", target: nil, action: nil)
     
     // Auto Peek Controls
     private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically drop down when a new song starts", target: nil, action: nil)
@@ -38,7 +41,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         self.menuBarController = menuBarController
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 660),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -52,10 +55,27 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         setupUI()
         loadInitialValues()
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onSettingsChanged),
+            name: .songTopSettingsChanged,
+            object: nil
+        )
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func onSettingsChanged() {
+        DispatchQueue.main.async { [weak self] in
+            self?.loadInitialValues()
+        }
     }
     
     public func show() {
@@ -66,6 +86,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
     
     public func windowWillClose(_ notification: Notification) {
+        pillController.hideTriggerZoneGuide()
         onWindowClosed?()
     }
     
@@ -85,10 +106,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         scrollView.autoresizingMask = [.width, .height]
         visualEffect.addSubview(scrollView)
         
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 680))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 730))
         scrollView.documentView = container
         
-        var currentY: CGFloat = 660
+        var currentY: CGFloat = 710
         
         // 1. Header
         let iconView = NSImageView(frame: NSRect(x: 24, y: currentY - 50, width: 48, height: 48))
@@ -154,54 +175,79 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY -= 90
         
-        // 4. Hover Sensitivity Card
-        let hoverCard = createCardView(frame: NSRect(x: 20, y: currentY - 145, width: 480, height: 138))
+        // 4. Hover Sensitivity & Area Card
+        let hoverCard = createCardView(frame: NSRect(x: 20, y: currentY - 180, width: 480, height: 174))
         container.addSubview(hoverCard)
         
         let hoverTitle = NSTextField(labelWithString: "Top-Screen Hover Sensitivity & Area")
         hoverTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        hoverTitle.frame = NSRect(x: 14, y: 112, width: 300, height: 16)
+        hoverTitle.frame = NSRect(x: 14, y: 146, width: 280, height: 16)
         hoverCard.addSubview(hoverTitle)
         
-        // Width Slider
+        guideButton.frame = NSRect(x: 310, y: 142, width: 156, height: 24)
+        guideButton.bezelStyle = .rounded
+        guideButton.target = self
+        guideButton.action = #selector(toggleGuideClicked)
+        hoverCard.addSubview(guideButton)
+        
+        // Width Slider (Continuous)
         let wLabel = NSTextField(labelWithString: "Scan Width:")
         wLabel.font = NSFont.systemFont(ofSize: 11)
-        wLabel.frame = NSRect(x: 14, y: 80, width: 80, height: 16)
+        wLabel.frame = NSRect(x: 14, y: 114, width: 80, height: 16)
         hoverCard.addSubview(wLabel)
         
-        widthSlider.frame = NSRect(x: 95, y: 78, width: 300, height: 20)
+        widthSlider.isContinuous = true
+        widthSlider.frame = NSRect(x: 95, y: 112, width: 300, height: 20)
         widthSlider.target = self
         widthSlider.action = #selector(widthSliderChanged)
         hoverCard.addSubview(widthSlider)
         
         widthValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         widthValueLabel.alignment = .right
-        widthValueLabel.frame = NSRect(x: 400, y: 80, width: 65, height: 16)
+        widthValueLabel.frame = NSRect(x: 400, y: 114, width: 65, height: 16)
         hoverCard.addSubview(widthValueLabel)
         
-        // Height Slider
+        // Height Slider (Continuous)
         let hLabel = NSTextField(labelWithString: "Scan Height:")
         hLabel.font = NSFont.systemFont(ofSize: 11)
-        hLabel.frame = NSRect(x: 14, y: 44, width: 80, height: 16)
+        hLabel.frame = NSRect(x: 14, y: 78, width: 80, height: 16)
         hoverCard.addSubview(hLabel)
         
-        heightSlider.frame = NSRect(x: 95, y: 42, width: 300, height: 20)
+        heightSlider.isContinuous = true
+        heightSlider.frame = NSRect(x: 95, y: 76, width: 300, height: 20)
         heightSlider.target = self
         heightSlider.action = #selector(heightSliderChanged)
         hoverCard.addSubview(heightSlider)
         
         heightValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         heightValueLabel.alignment = .right
-        heightValueLabel.frame = NSRect(x: 400, y: 44, width: 65, height: 16)
+        heightValueLabel.frame = NSRect(x: 400, y: 78, width: 65, height: 16)
         hoverCard.addSubview(heightValueLabel)
         
-        let hoverDesc = NSTextField(labelWithString: "Move your mouse to the top center of your display to trigger the dropdown.")
+        // Sensitivity / Trigger Delay Slider (Continuous)
+        let sLabel = NSTextField(labelWithString: "Trigger Delay:")
+        sLabel.font = NSFont.systemFont(ofSize: 11)
+        sLabel.frame = NSRect(x: 14, y: 42, width: 80, height: 16)
+        hoverCard.addSubview(sLabel)
+        
+        sensitivitySlider.isContinuous = true
+        sensitivitySlider.frame = NSRect(x: 95, y: 40, width: 300, height: 20)
+        sensitivitySlider.target = self
+        sensitivitySlider.action = #selector(sensitivitySliderChanged)
+        hoverCard.addSubview(sensitivitySlider)
+        
+        sensitivityValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        sensitivityValueLabel.alignment = .right
+        sensitivityValueLabel.frame = NSRect(x: 395, y: 42, width: 75, height: 16)
+        hoverCard.addSubview(sensitivityValueLabel)
+        
+        let hoverDesc = NSTextField(labelWithString: "💡 Tip: Click Highlight Zone to test your mouse. The zone turns green when active.")
         hoverDesc.font = NSFont.systemFont(ofSize: 10)
         hoverDesc.textColor = .secondaryLabelColor
-        hoverDesc.frame = NSRect(x: 14, y: 14, width: 450, height: 16)
+        hoverDesc.frame = NSRect(x: 14, y: 12, width: 450, height: 16)
         hoverCard.addSubview(hoverDesc)
         
-        currentY -= 160
+        currentY -= 195
         
         // 5. Behavior / Auto-Peek Card
         let peekCard = createCardView(frame: NSRect(x: 20, y: currentY - 100, width: 480, height: 94))
@@ -222,6 +268,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         pLabel.frame = NSRect(x: 14, y: 14, width: 90, height: 16)
         peekCard.addSubview(pLabel)
         
+        peekDurationSlider.isContinuous = true
         peekDurationSlider.frame = NSRect(x: 105, y: 12, width: 290, height: 20)
         peekDurationSlider.target = self
         peekDurationSlider.action = #selector(peekDurationChanged)
@@ -301,13 +348,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
     
     private func loadInitialValues() {
-        if !pillController.isEnabled {
-            modeSegmentedControl.selectedSegment = 2
-        } else if !pillController.hoverDropOnly {
-            modeSegmentedControl.selectedSegment = 1
-        } else {
-            modeSegmentedControl.selectedSegment = 0
-        }
+        modeSegmentedControl.selectedSegment = pillController.displayMode.rawValue
         
         widthSlider.doubleValue = Double(pillController.scanWidth)
         widthValueLabel.stringValue = "\(Int(pillController.scanWidth)) px"
@@ -315,11 +356,28 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         heightSlider.doubleValue = Double(pillController.scanHeight)
         heightValueLabel.stringValue = "\(Int(pillController.scanHeight)) px"
         
+        sensitivitySlider.doubleValue = pillController.hoverDelay
+        updateSensitivityLabel(delay: pillController.hoverDelay)
+        
         autoPeekCheckbox.state = pillController.autoPeekEnabled ? .on : .off
         peekDurationSlider.doubleValue = pillController.peekDuration
         peekDurationLabel.stringValue = String(format: "%.1f s", pillController.peekDuration)
         
-        menuBarTitleCheckbox.state = UserDefaults.standard.bool(forKey: "showTitleInMenuBar") ? .on : .off
+        menuBarTitleCheckbox.state = menuBarController.showTitleInMenuBar ? .on : .off
+        guideButton.title = pillController.isGuidePinned ? "Hide Zone Guide" : "🎯 Highlight Zone"
+    }
+    
+    private func updateSensitivityLabel(delay: Double) {
+        if delay <= 0.02 {
+            sensitivityValueLabel.stringValue = "Instant (0.0s)"
+        } else {
+            sensitivityValueLabel.stringValue = String(format: "%.2f s", delay)
+        }
+    }
+    
+    @objc private func toggleGuideClicked() {
+        pillController.toggleGuide()
+        guideButton.title = pillController.isGuidePinned ? "Hide Zone Guide" : "🎯 Highlight Zone"
     }
     
     @objc private func testDropdownClicked() {
@@ -327,31 +385,30 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
     
     @objc private func modeChanged() {
-        switch modeSegmentedControl.selectedSegment {
-        case 0:
-            pillController.isEnabled = true
-            pillController.hoverDropOnly = true
-        case 1:
-            pillController.isEnabled = true
-            pillController.hoverDropOnly = false
-        case 2:
-            pillController.isEnabled = false
-        default:
-            break
+        if let mode = DisplayMode(rawValue: modeSegmentedControl.selectedSegment) {
+            pillController.displayMode = mode
         }
-        menuBarController.update(track: detector.currentTrack)
     }
     
     @objc private func widthSliderChanged() {
         let val = widthSlider.doubleValue
         pillController.scanWidth = CGFloat(val)
         widthValueLabel.stringValue = "\(Int(val)) px"
+        pillController.showTriggerZoneGuide(temporarily: true)
     }
     
     @objc private func heightSliderChanged() {
         let val = heightSlider.doubleValue
         pillController.scanHeight = CGFloat(val)
         heightValueLabel.stringValue = "\(Int(val)) px"
+        pillController.showTriggerZoneGuide(temporarily: true)
+    }
+    
+    @objc private func sensitivitySliderChanged() {
+        let val = sensitivitySlider.doubleValue
+        pillController.hoverDelay = val
+        updateSensitivityLabel(delay: val)
+        pillController.showTriggerZoneGuide(temporarily: true)
     }
     
     @objc private func autoPeekToggled() {
@@ -365,8 +422,6 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
     
     @objc private func menuBarTitleToggled() {
-        let show = (menuBarTitleCheckbox.state == .on)
-        UserDefaults.standard.set(show, forKey: "showTitleInMenuBar")
-        menuBarController.update(track: detector.currentTrack)
+        menuBarController.showTitleInMenuBar = (menuBarTitleCheckbox.state == .on)
     }
 }
