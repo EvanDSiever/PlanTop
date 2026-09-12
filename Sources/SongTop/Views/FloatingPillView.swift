@@ -52,6 +52,8 @@ public final class FloatingPillView: NSView {
     private let volumeButton = NSButton()
     private let volumeSlider = NSSlider(value: 100, minValue: 0, maxValue: 100, target: nil, action: nil)
     private var seekDebounceTimer: Timer?
+    public var onVolumeRequested: ((Int) -> Void)?
+    public var onMuteRequested: ((Bool) -> Void)?
     
     // Dynamic Drag-Scaling Support
     public var preferredPanelWidth: CGFloat = 340
@@ -770,6 +772,7 @@ public final class FloatingPillView: NSView {
     
     @objc private func handleVolumeButton() {
         videoPlayerView.toggleMute()
+        onMuteRequested?(videoPlayerView.isMuted)
     }
     
     @objc private func handleVolumeSliderChanged() {
@@ -778,6 +781,21 @@ public final class FloatingPillView: NSView {
         if videoPlayerView.isMuted && vol > 0 {
             videoPlayerView.setMuted(false)
         }
+        onVolumeRequested?(vol)
+    }
+    
+    public func updateTelemetry(cur: Double, dur: Double, paused: Bool, vol: Int, muted: Bool) {
+        videoPlayerView.updateFromTelemetry(cur: cur, dur: dur, paused: paused, vol: vol, muted: muted)
+        if !isUserScrubbing {
+            currentTimeLabel.stringValue = formatTime(cur)
+            if dur > 0 {
+                durationLabel.stringValue = formatTime(dur)
+                scrubberSlider.maxValue = dur
+                scrubberSlider.doubleValue = cur
+            }
+        }
+        updatePlayPauseState(isPlaying: !paused)
+        updateVolumeUI(vol: vol, isMuted: muted)
     }
     
     private func handlePlayerProgress(cur: Double, dur: Double) {

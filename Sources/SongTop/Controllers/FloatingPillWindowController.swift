@@ -284,6 +284,12 @@ public final class FloatingPillWindowController: NSObject {
             name: .songTopNativePiPChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onTabTelemetryUpdated),
+            name: .songTopTabTelemetryUpdated,
+            object: nil
+        )
     }
     
     deinit {
@@ -297,6 +303,19 @@ public final class FloatingPillWindowController: NSObject {
     @objc private func onNativePiPChanged() {
         DispatchQueue.main.async { [weak self] in
             self?.handleNativePiPStateChanged()
+        }
+    }
+    
+    @objc private func onTabTelemetryUpdated() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pillView?.updateTelemetry(
+                cur: self.detector.tabCurrentTime,
+                dur: self.detector.tabDuration,
+                paused: self.detector.tabIsPaused,
+                vol: self.detector.tabVolume,
+                muted: self.detector.tabIsMuted
+            )
         }
     }
     
@@ -697,6 +716,16 @@ public final class FloatingPillWindowController: NSObject {
                 if let t = detector?.currentTrack {
                     detector?.togglePlayPause(track: t)
                 }
+            }
+        }
+        pv.onVolumeRequested = { [weak detector] vol in
+            if let t = detector?.currentTrack {
+                detector?.setVolume(track: t, volume: vol)
+            }
+        }
+        pv.onMuteRequested = { [weak detector] muted in
+            if let t = detector?.currentTrack {
+                detector?.setMuted(track: t, muted: muted)
             }
         }
         pv.onTogglePin = { [weak self] in

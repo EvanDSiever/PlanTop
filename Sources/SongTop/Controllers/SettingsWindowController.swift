@@ -47,7 +47,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     // Browser Status Container
     private let browsersStack = NSStackView()
-    private var loginWindowController: YouTubeLoginWindowController?
+    private let tabAutomationStatusLabel = NSTextField(labelWithString: "⚪ In-Tab JavaScript: Waiting for YouTube playback")
+    private let testTabAutomationButton = NSButton(title: "Test Connection", target: nil, action: nil)
     
     public var onWindowClosed: (() -> Void)?
     
@@ -304,70 +305,83 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         currentY += 94 + 14
         
         // 6. Live Video Playback & Picture-in-Picture Card
-        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 288))
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 304))
         container.addSubview(videoCard)
         
         let videoTitle = NSTextField(labelWithString: "Live Video Playback & Picture-in-Picture (PiP)")
         videoTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        videoTitle.frame = NSRect(x: 14, y: 260, width: 380, height: 16)
+        videoTitle.frame = NSRect(x: 14, y: 276, width: 380, height: 16)
         videoCard.addSubview(videoTitle)
         
-        videoPreviewCheckbox.frame = NSRect(x: 14, y: 234, width: 450, height: 18)
+        videoPreviewCheckbox.frame = NSRect(x: 14, y: 250, width: 450, height: 18)
         videoPreviewCheckbox.target = self
         videoPreviewCheckbox.action = #selector(videoPreviewToggled)
         videoCard.addSubview(videoPreviewCheckbox)
         
-        pipCheckbox.frame = NSRect(x: 14, y: 210, width: 450, height: 18)
+        pipCheckbox.frame = NSRect(x: 14, y: 226, width: 450, height: 18)
         pipCheckbox.target = self
         pipCheckbox.action = #selector(pipCheckboxToggled)
         videoCard.addSubview(pipCheckbox)
         
-        pipAudioCheckbox.frame = NSRect(x: 14, y: 186, width: 450, height: 18)
+        pipAudioCheckbox.frame = NSRect(x: 14, y: 202, width: 450, height: 18)
         pipAudioCheckbox.target = self
         pipAudioCheckbox.action = #selector(pipAudioCheckboxToggled)
         videoCard.addSubview(pipAudioCheckbox)
         
-        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 162, width: 450, height: 18)
+        pipSyncBackCheckbox.frame = NSRect(x: 14, y: 178, width: 450, height: 18)
         pipSyncBackCheckbox.target = self
         pipSyncBackCheckbox.action = #selector(pipSyncBackCheckboxToggled)
         videoCard.addSubview(pipSyncBackCheckbox)
         
-        nativePiPCompanionCheckbox.frame = NSRect(x: 14, y: 138, width: 450, height: 18)
+        nativePiPCompanionCheckbox.frame = NSRect(x: 14, y: 154, width: 450, height: 18)
         nativePiPCompanionCheckbox.target = self
         nativePiPCompanionCheckbox.action = #selector(nativePiPCompanionToggled)
         videoCard.addSubview(nativePiPCompanionCheckbox)
         
-        pinCheckbox.frame = NSRect(x: 14, y: 112, width: 450, height: 18)
+        pinCheckbox.frame = NSRect(x: 14, y: 128, width: 450, height: 18)
         pinCheckbox.target = self
         pinCheckbox.action = #selector(pinCheckboxToggled)
         videoCard.addSubview(pinCheckbox)
         
         let pwLabel = NSTextField(labelWithString: "Panel Width:")
         pwLabel.font = NSFont.systemFont(ofSize: 11)
-        pwLabel.frame = NSRect(x: 14, y: 82, width: 85, height: 16)
+        pwLabel.frame = NSRect(x: 14, y: 98, width: 85, height: 16)
         videoCard.addSubview(pwLabel)
         
         panelWidthSlider.isContinuous = true
-        panelWidthSlider.frame = NSRect(x: 105, y: 80, width: 290, height: 20)
+        panelWidthSlider.frame = NSRect(x: 105, y: 96, width: 290, height: 20)
         panelWidthSlider.target = self
         panelWidthSlider.action = #selector(panelWidthSliderChanged)
         videoCard.addSubview(panelWidthSlider)
         
         panelWidthValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         panelWidthValueLabel.alignment = .right
-        panelWidthValueLabel.frame = NSRect(x: 400, y: 82, width: 65, height: 16)
+        panelWidthValueLabel.frame = NSRect(x: 400, y: 98, width: 65, height: 16)
         videoCard.addSubview(panelWidthValueLabel)
         
-        let signInButton = NSButton(title: "👤 Sign In to YouTube (Premium / Personal Account)", target: self, action: #selector(openYouTubeLogin))
-        signInButton.bezelStyle = .rounded
-        signInButton.frame = NSRect(x: 14, y: 48, width: 335, height: 26)
-        videoCard.addSubview(signInButton)
+        // Option 2: Direct Tab Automation Controls
+        tabAutomationStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        tabAutomationStatusLabel.frame = NSRect(x: 14, y: 64, width: 330, height: 20)
+        tabAutomationStatusLabel.lineBreakMode = .byTruncatingTail
+        videoCard.addSubview(tabAutomationStatusLabel)
         
-        let premiumHint = NSTextField(labelWithString: "✨ Signed-in accounts get 0 ads (YouTube Premium) & sync watch history.")
-        premiumHint.font = NSFont.systemFont(ofSize: 10)
-        premiumHint.textColor = .secondaryLabelColor
-        premiumHint.frame = NSRect(x: 14, y: 28, width: 450, height: 14)
-        videoCard.addSubview(premiumHint)
+        testTabAutomationButton.bezelStyle = .rounded
+        testTabAutomationButton.frame = NSRect(x: 350, y: 60, width: 116, height: 26)
+        testTabAutomationButton.target = self
+        testTabAutomationButton.action = #selector(testTabAutomationClicked)
+        videoCard.addSubview(testTabAutomationButton)
+        
+        let tabTipChrome = NSTextField(labelWithString: "⚡ Chrome / Brave / Arc: View > Developer > Allow JavaScript from Apple Events")
+        tabTipChrome.font = NSFont.systemFont(ofSize: 10)
+        tabTipChrome.textColor = .secondaryLabelColor
+        tabTipChrome.frame = NSRect(x: 14, y: 44, width: 450, height: 14)
+        videoCard.addSubview(tabTipChrome)
+        
+        let tabTipSafari = NSTextField(labelWithString: "⚡ Safari: Develop > Allow JavaScript from Apple Events")
+        tabTipSafari.font = NSFont.systemFont(ofSize: 10)
+        tabTipSafari.textColor = .secondaryLabelColor
+        tabTipSafari.frame = NSRect(x: 14, y: 26, width: 450, height: 14)
+        videoCard.addSubview(tabTipSafari)
         
         let dragTip = NSTextField(labelWithString: "💡 Tip: You can also drag the left edge of the side panel to resize it interactively!")
         dragTip.font = NSFont.systemFont(ofSize: 10)
@@ -375,7 +389,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         dragTip.frame = NSRect(x: 14, y: 8, width: 450, height: 14)
         videoCard.addSubview(dragTip)
         
-        currentY += 288 + 14
+        currentY += 304 + 14
         
         // 7. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: 54))
@@ -429,6 +443,18 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             statusLabel.stringValue = "No YouTube Audio Playing"
             trackSubtitleLabel.stringValue = "Play music in Chrome, Safari, Brave, or Arc"
         }
+        
+        if detector.isTabAutomationActive {
+            tabAutomationStatusLabel.stringValue = "🟢 In-Tab Automation: Active (Zero-Reload)"
+            tabAutomationStatusLabel.textColor = .systemGreen
+        } else if let track = detector.currentTrack {
+            tabAutomationStatusLabel.stringValue = "🟡 In-Tab Automation: Ready (\(track.browser))"
+            tabAutomationStatusLabel.textColor = .systemOrange
+        } else {
+            tabAutomationStatusLabel.stringValue = "⚪ In-Tab Automation: Waiting for playback"
+            tabAutomationStatusLabel.textColor = .secondaryLabelColor
+        }
+        
         updateBrowserBadges()
     }
     
@@ -565,10 +591,23 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         menuBarController.showTitleInMenuBar = (menuBarTitleCheckbox.state == .on)
     }
     
-    @objc private func openYouTubeLogin() {
-        if loginWindowController == nil {
-            loginWindowController = YouTubeLoginWindowController()
+    @objc private func testTabAutomationClicked() {
+        testTabAutomationButton.isEnabled = false
+        tabAutomationStatusLabel.stringValue = "⏳ Testing tab connection..."
+        detector.testTabAutomationConnection { [weak self] isConnected, message in
+            DispatchQueue.main.async {
+                self?.testTabAutomationButton.isEnabled = true
+                self?.tabAutomationStatusLabel.stringValue = isConnected
+                    ? "🟢 In-Tab Automation: Connected!"
+                    : "⚠️ Check Browser Settings"
+                self?.tabAutomationStatusLabel.textColor = isConnected ? .systemGreen : .systemRed
+                
+                let alert = NSAlert()
+                alert.messageText = isConnected ? "Direct Tab Automation Active" : "Action Required in Browser"
+                alert.informativeText = message
+                alert.alertStyle = isConnected ? .informational : .warning
+                alert.runModal()
+            }
         }
-        loginWindowController?.show()
     }
 }
