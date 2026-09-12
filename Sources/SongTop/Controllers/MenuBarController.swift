@@ -13,6 +13,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
     
+    public var onOpenSettings: (() -> Void)?
+    
     public init(detector: YouTubeDetector, pillController: FloatingPillWindowController) {
         self.detector = detector
         self.pillController = pillController
@@ -201,6 +203,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         refreshItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         menu.addItem(refreshItem)
         
+        // Settings & Customization
+        let settingsItem = NSMenuItem(title: "Settings & Customization...", action: #selector(openSettingsClicked), keyEquivalent: ",")
+        settingsItem.target = self
+        settingsItem.image = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: nil)
+        menu.addItem(settingsItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
         // Quit
         let quitItem = NSMenuItem(title: "Quit SongTop", action: #selector(quitClicked), keyEquivalent: "q")
         quitItem.target = self
@@ -271,6 +281,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     @objc private func checkNowClicked() {
         detector.checkNow()
+    }
+    
+    @objc private func openSettingsClicked() {
+        onOpenSettings?()
     }
     
     @objc private func quitClicked() {

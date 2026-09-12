@@ -12,9 +12,27 @@ public final class FloatingPillWindowController: NSObject {
     private var isHoveringActive: Bool = false
     private var lastTrackId: String = ""
     
-    // Generous scan dimensions
-    public var scanWidth: CGFloat = 750
-    public var scanHeight: CGFloat = 70
+    // Scan dimensions
+    public var scanWidth: CGFloat = 750 {
+        didSet {
+            UserDefaults.standard.set(Double(scanWidth), forKey: "scanWidth")
+        }
+    }
+    public var scanHeight: CGFloat = 70 {
+        didSet {
+            UserDefaults.standard.set(Double(scanHeight), forKey: "scanHeight")
+        }
+    }
+    public var peekDuration: Double = 5.0 {
+        didSet {
+            UserDefaults.standard.set(peekDuration, forKey: "peekDuration")
+        }
+    }
+    public var autoPeekEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(autoPeekEnabled, forKey: "autoPeekEnabled")
+        }
+    }
     
     public var isEnabled: Bool = true {
         didSet {
@@ -51,6 +69,18 @@ public final class FloatingPillWindowController: NSObject {
         }
         if UserDefaults.standard.object(forKey: "hoverDropOnly") != nil {
             self.hoverDropOnly = UserDefaults.standard.bool(forKey: "hoverDropOnly")
+        }
+        if UserDefaults.standard.object(forKey: "scanWidth") != nil {
+            self.scanWidth = CGFloat(UserDefaults.standard.double(forKey: "scanWidth"))
+        }
+        if UserDefaults.standard.object(forKey: "scanHeight") != nil {
+            self.scanHeight = CGFloat(UserDefaults.standard.double(forKey: "scanHeight"))
+        }
+        if UserDefaults.standard.object(forKey: "peekDuration") != nil {
+            self.peekDuration = UserDefaults.standard.double(forKey: "peekDuration")
+        }
+        if UserDefaults.standard.object(forKey: "autoPeekEnabled") != nil {
+            self.autoPeekEnabled = UserDefaults.standard.bool(forKey: "autoPeekEnabled")
         }
         
         startMousePolling()
@@ -157,8 +187,8 @@ public final class FloatingPillWindowController: NSObject {
         
         if !hoverDropOnly {
             dropDown()
-        } else if isNewTrack {
-            peek(duration: 5.0)
+        } else if isNewTrack && autoPeekEnabled {
+            peek(duration: peekDuration)
         }
     }
     
