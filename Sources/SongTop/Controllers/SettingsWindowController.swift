@@ -22,6 +22,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let sensitivityValueLabel = NSTextField(labelWithString: "Instant (0.0s)")
     private let guideButton = NSButton(title: "🎯 Highlight Right Zone", target: nil, action: nil)
     
+    // Video Preview Control
+    private let videoPreviewCheckbox = NSButton(checkboxWithTitle: "Show video playing in side panel when active (Muted by default)", target: nil, action: nil)
+    
     // Auto Peek Controls
     private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically stretch out when a new song starts", target: nil, action: nil)
     private let peekDurationSlider = NSSlider(value: 5.0, minValue: 2.0, maxValue: 10.0, target: nil, action: nil)
@@ -281,7 +284,23 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY -= 115
         
-        // 6. Menu Bar Options Card
+        // 6. Live Video Playback Card
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY - 74, width: 480, height: 68))
+        container.addSubview(videoCard)
+        
+        let videoTitle = NSTextField(labelWithString: "Live Video Playback")
+        videoTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        videoTitle.frame = NSRect(x: 14, y: 44, width: 300, height: 16)
+        videoCard.addSubview(videoTitle)
+        
+        videoPreviewCheckbox.frame = NSRect(x: 14, y: 16, width: 450, height: 18)
+        videoPreviewCheckbox.target = self
+        videoPreviewCheckbox.action = #selector(videoPreviewToggled)
+        videoCard.addSubview(videoPreviewCheckbox)
+        
+        currentY -= 88
+        
+        // 7. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY - 60, width: 480, height: 54))
         container.addSubview(menuCard)
         
@@ -292,7 +311,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY -= 75
         
-        // 7. Browser Status Card
+        // 8. Browser Status Card
         let browserCard = createCardView(frame: NSRect(x: 20, y: currentY - 65, width: 480, height: 58))
         container.addSubview(browserCard)
         
@@ -332,10 +351,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         updateBrowserBadges()
     }
     
-    private func updateBrowserBadges() {
+    public func updateBrowserBadges() {
         browsersStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        
-        let runningNames = Set(NSWorkspace.shared.runningApplications.compactMap { $0.localizedName })
+        let runningApps = NSWorkspace.shared.runningApplications
+        let runningNames = Set(runningApps.compactMap { $0.localizedName })
         let browsers = ["Google Chrome", "Safari", "Brave Browser", "Arc", "Microsoft Edge"]
         
         for name in browsers {
@@ -358,6 +377,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         sensitivitySlider.doubleValue = pillController.hoverDelay
         updateSensitivityLabel(delay: pillController.hoverDelay)
+        
+        videoPreviewCheckbox.state = pillController.isVideoPreviewEnabled ? .on : .off
         
         autoPeekCheckbox.state = pillController.autoPeekEnabled ? .on : .off
         peekDurationSlider.doubleValue = pillController.peekDuration
@@ -409,6 +430,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         pillController.hoverDelay = val
         updateSensitivityLabel(delay: val)
         pillController.showTriggerZoneGuide(temporarily: true)
+    }
+    
+    @objc private func videoPreviewToggled() {
+        pillController.isVideoPreviewEnabled = (videoPreviewCheckbox.state == .on)
     }
     
     @objc private func autoPeekToggled() {

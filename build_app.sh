@@ -5,7 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
 echo "🔨 Compiling SongTop..."
-swiftc -O -framework AppKit -framework QuartzCore -framework Combine \
+swiftc -O -framework AppKit -framework QuartzCore -framework Combine -framework WebKit \
     Sources/SongTop/Models/*.swift \
     Sources/SongTop/Services/*.swift \
     Sources/SongTop/Views/*.swift \

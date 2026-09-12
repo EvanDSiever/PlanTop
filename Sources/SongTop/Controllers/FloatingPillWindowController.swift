@@ -67,6 +67,17 @@ public final class FloatingPillWindowController: NSObject {
         }
     }
     
+    public var isVideoPreviewEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isVideoPreviewEnabled, forKey: "isVideoPreviewEnabled")
+            pillView?.isVideoPreviewEnabled = isVideoPreviewEnabled
+            if isDroppedDown {
+                repositionPanel()
+            }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    
     public var isEnabled: Bool = true {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "isPillEnabled")
@@ -119,6 +130,9 @@ public final class FloatingPillWindowController: NSObject {
         self.detector = detector
         super.init()
         
+        if UserDefaults.standard.object(forKey: "isVideoPreviewEnabled") != nil {
+            self.isVideoPreviewEnabled = UserDefaults.standard.bool(forKey: "isVideoPreviewEnabled")
+        }
         if UserDefaults.standard.object(forKey: "isPillEnabled") != nil {
             self.isEnabled = UserDefaults.standard.bool(forKey: "isPillEnabled")
         }
@@ -442,9 +456,15 @@ public final class FloatingPillWindowController: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         
         let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: 400, height: 56))
+        pv.isVideoPreviewEnabled = isVideoPreviewEnabled
         pv.onOpenTab = { [weak detector] in
             if let t = detector?.currentTrack {
                 detector?.focusTab(track: t)
+            }
+        }
+        pv.onTogglePlayPause = { [weak detector] in
+            if let t = detector?.currentTrack {
+                detector?.togglePlayPause(track: t)
             }
         }
         pv.onCopyTitle = { [weak detector] in
@@ -555,6 +575,8 @@ public final class FloatingPillWindowController: NSObject {
         let targetX = screenFrame.maxX - fittingSize.width
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
+        panel.setContentSize(fittingSize)
+        pv.frame = NSRect(origin: .zero, size: fittingSize)
         panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }
 }

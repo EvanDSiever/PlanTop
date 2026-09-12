@@ -28,6 +28,29 @@ public struct TrackInfo: Equatable, Identifiable {
         return title
     }
     
+    public var youtubeVideoId: String? {
+        guard let components = URLComponents(string: url) else { return nil }
+        let host = components.host?.lowercased() ?? ""
+        if host.contains("youtube.com") {
+            if components.path.starts(with: "/shorts/") {
+                return components.path.replacingOccurrences(of: "/shorts/", with: "").components(separatedBy: "/").first
+            } else if components.path.starts(with: "/embed/") {
+                return components.path.replacingOccurrences(of: "/embed/", with: "").components(separatedBy: "/").first
+            } else {
+                return components.queryItems?.first(where: { $0.name == "v" })?.value
+            }
+        } else if host.contains("youtu.be") {
+            let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return path.isEmpty ? nil : path.components(separatedBy: "?").first
+        }
+        return nil
+    }
+    
+    public var isVideo: Bool {
+        guard let vid = youtubeVideoId else { return false }
+        return !vid.isEmpty
+    }
+    
     public static func cleanRawTitle(_ raw: String) -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         

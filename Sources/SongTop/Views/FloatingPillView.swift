@@ -6,10 +6,19 @@ public final class FloatingPillView: NSView {
     private let badgeContainer = NSView()
     private let equalizerView = EqualizerView(barColor: .white)
     
+    // Video Player
+    private let videoPlayerView = YouTubeVideoPlayerView()
+    public var isVideoPreviewEnabled: Bool = true {
+        didSet {
+            update(with: currentTrack)
+        }
+    }
+    
     private let titleLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
     private let browserBadge = NSTextField(labelWithString: "")
     
+    private let playPauseButton = NSButton()
     private let openButton = NSButton()
     private let copyButton = NSButton()
     private let closeButton = NSButton()
@@ -19,6 +28,7 @@ public final class FloatingPillView: NSView {
     
     public var onOpenTab: (() -> Void)?
     public var onCopyTitle: (() -> Void)?
+    public var onTogglePlayPause: (() -> Void)?
     public var onDismiss: (() -> Void)?
     public var onHoverStateChanged: ((Bool) -> Void)?
     
@@ -64,6 +74,13 @@ public final class FloatingPillView: NSView {
         gripBar.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.35).cgColor
         gripBar.identifier = NSUserInterfaceItemIdentifier("gripBar")
         visualEffectView.addSubview(gripBar)
+        
+        // Video Player View (16:9 Live Preview)
+        videoPlayerView.wantsLayer = true
+        videoPlayerView.layer?.cornerRadius = 12
+        videoPlayerView.layer?.masksToBounds = true
+        videoPlayerView.isHidden = true
+        visualEffectView.addSubview(videoPlayerView)
         
         // Red Icon Circle
         badgeContainer.wantsLayer = true
@@ -113,6 +130,12 @@ public final class FloatingPillView: NSView {
         artistLabel.textColor = NSColor(white: 1.0, alpha: 0.72)
         artistLabel.lineBreakMode = .byTruncatingTail
         visualEffectView.addSubview(artistLabel)
+        
+        // Play / Pause Button
+        configureIconButton(playPauseButton, symbol: "pause.fill", tooltip: "Play / Pause Video")
+        playPauseButton.target = self
+        playPauseButton.action = #selector(handlePlayPause)
+        visualEffectView.addSubview(playPauseButton)
         
         // Open Tab Button
         configureIconButton(openButton, symbol: "arrow.up.forward.app", tooltip: "Bring YouTube Tab to Front")
@@ -176,6 +199,8 @@ public final class FloatingPillView: NSView {
     public func update(with track: TrackInfo?) {
         self.currentTrack = track
         
+        let hasVideo = isVideoPreviewEnabled && (track?.isVideo ?? false)
+        
         if let track = track {
             titleLabel.stringValue = track.title
             artistLabel.stringValue = track.artist.isEmpty ? "YouTube Audio" : track.artist
@@ -186,7 +211,19 @@ public final class FloatingPillView: NSView {
             badgeContainer.layer?.backgroundColor = NSColor(red: 0.92, green: 0.1, blue: 0.14, alpha: 1.0).cgColor
             equalizerView.startAnimating()
             copyButton.isHidden = false
+            playPauseButton.isHidden = false
             openButton.toolTip = "Bring YouTube Tab to Front (\(track.browser))"
+            
+            if hasVideo, let vid = track.youtubeVideoId {
+                videoPlayerView.isHidden = false
+                videoPlayerView.loadVideo(id: vid)
+                if isStretchedOut {
+                    videoPlayerView.play()
+                }
+            } else {
+                videoPlayerView.isHidden = true
+                videoPlayerView.clearVideo()
+            }
         } else {
             titleLabel.stringValue = "No YouTube Audio Playing"
             artistLabel.stringValue = "Play music in Chrome, Safari, Brave, or Arc"
@@ -195,7 +232,11 @@ public final class FloatingPillView: NSView {
             badgeContainer.layer?.backgroundColor = NSColor(white: 0.25, alpha: 1.0).cgColor
             equalizerView.stopAnimating()
             copyButton.isHidden = true
+            playPauseButton.isHidden = true
             openButton.toolTip = "Open YouTube"
+            
+            videoPlayerView.isHidden = true
+            videoPlayerView.clearVideo()
         }
         
         needsLayout = true
@@ -211,64 +252,110 @@ public final class FloatingPillView: NSView {
             visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
         }
         
-        // Left grip bar
-        if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
-            grip.frame = NSRect(x: 5, y: (bounds.height - 28) / 2, width: 3.5, height: 28)
-        }
+        let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
         
-        let paddingLeft: CGFloat = 16
-        let paddingRight: CGFloat = 12
-        let iconSize: CGFloat = 36
-        
-        // Icon
-        badgeContainer.frame = NSRect(x: paddingLeft, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
-        
-        // Buttons on right
-        let buttonSize: CGFloat = 26
-        let btnSpacing: CGFloat = 6
-        
-        closeButton.frame = NSRect(x: bounds.width - paddingRight - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-        
-        if copyButton.isHidden {
+        if hasVideo {
+            // Video Mode Layout (340 wide x 260 tall)
+            if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
+                grip.frame = NSRect(x: 5, y: (bounds.height - 44) / 2, width: 3.5, height: 44)
+            }
+            
+            let padLeft: CGFloat = 18
+            let padRight: CGFloat = 14
+            let videoW = bounds.width - padLeft - padRight
+            let videoH = videoW * 9.0 / 16.0
+            let videoY = bounds.height - 14 - videoH
+            videoPlayerView.frame = NSRect(x: padLeft, y: videoY, width: videoW, height: videoH)
+            videoPlayerView.isHidden = false
+            
+            // Bottom control bar area (height = videoY)
+            let iconSize: CGFloat = 30
+            badgeContainer.frame = NSRect(x: padLeft, y: (videoY - iconSize) / 2, width: iconSize, height: iconSize)
+            badgeContainer.layer?.cornerRadius = 15
+            equalizerView.frame = NSRect(x: 4, y: 7, width: 22, height: 16)
+            
+            let btnSize: CGFloat = 24
+            let btnSpacing: CGFloat = 5
+            
+            closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
+            openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
+            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
+            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
+            
+            let textLeft = badgeContainer.frame.maxX + 8
+            let textRight = playPauseButton.frame.minX - 8
+            let textWidth = max(50, textRight - textLeft)
+            
+            titleLabel.frame = NSRect(x: textLeft, y: (videoY / 2) + 1, width: textWidth, height: 16)
+            artistLabel.frame = NSRect(x: textLeft, y: (videoY / 2) - 16, width: max(30, textWidth - 45), height: 14)
+            browserBadge.frame = NSRect(x: textLeft + max(30, textWidth - 45) + 4, y: (videoY / 2) - 15, width: 40, height: 13)
+        } else {
+            // Compact Audio Mode Layout (Height: 56)
+            videoPlayerView.isHidden = true
+            
+            if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
+                grip.frame = NSRect(x: 5, y: (bounds.height - 28) / 2, width: 3.5, height: 28)
+            }
+            
+            let paddingLeft: CGFloat = 16
+            let paddingRight: CGFloat = 12
+            let iconSize: CGFloat = 36
+            
+            badgeContainer.frame = NSRect(x: paddingLeft, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
+            badgeContainer.layer?.cornerRadius = 18
+            equalizerView.frame = NSRect(x: 7, y: 10, width: 22, height: 16)
+            
+            let buttonSize: CGFloat = 26
+            let btnSpacing: CGFloat = 6
+            
+            closeButton.frame = NSRect(x: bounds.width - paddingRight - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
             openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-        } else {
-            copyButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            openButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            
+            if copyButton.isHidden {
+                playPauseButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            } else {
+                copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+                playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            }
+            
+            let textLeft = badgeContainer.frame.maxX + 10
+            let rightmostBtn = playPauseButton.isHidden ? (copyButton.isHidden ? openButton : copyButton) : playPauseButton
+            let textRight = rightmostBtn.frame.minX - 10
+            let availableWidth = max(100, textRight - textLeft)
+            
+            if browserBadge.isHidden {
+                titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: min(availableWidth, 320), height: 18)
+            } else {
+                let badgeWidth = browserBadge.frame.width + 4
+                let titleWidth = min(availableWidth - badgeWidth - 6, 280)
+                titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: titleWidth, height: 18)
+                browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (bounds.height / 2) + 2, width: badgeWidth, height: 16)
+            }
+            
+            artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 18, width: availableWidth, height: 16)
         }
-        
-        // Text area between icon and buttons
-        let textLeft = badgeContainer.frame.maxX + 10
-        let textRight = openButton.frame.minX - 10
-        let availableWidth = max(100, textRight - textLeft)
-        
-        if browserBadge.isHidden {
-            titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: min(availableWidth, 320), height: 18)
-        } else {
-            let badgeWidth = browserBadge.frame.width + 4
-            let titleWidth = min(availableWidth - badgeWidth - 6, 280)
-            titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: titleWidth, height: 18)
-            browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (bounds.height / 2) + 2, width: badgeWidth, height: 16)
-        }
-        
-        artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 18, width: availableWidth, height: 16)
     }
     
     public func stretchOut(animated: Bool = true) {
         isStretchedOut = true
         if !animated {
             visualEffectView.frame = bounds
+            videoPlayerView.play()
             return
         }
         visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
-        NSAnimationContext.runAnimationGroup { context in
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.28
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
             visualEffectView.animator().frame = bounds
-        }
+        }, completionHandler: { [weak self] in
+            self?.videoPlayerView.play()
+        })
     }
     
     public func slideIn(animated: Bool = true, completion: (() -> Void)? = nil) {
         isStretchedOut = false
+        videoPlayerView.pause()
         if !animated {
             visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
             completion?()
@@ -281,7 +368,20 @@ public final class FloatingPillView: NSView {
         }, completionHandler: completion)
     }
     
+    public func playVideo() {
+        videoPlayerView.play()
+    }
+    
+    public func pauseVideo() {
+        videoPlayerView.pause()
+    }
+    
     public func calculateFittingSize() -> NSSize {
+        let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
+        if hasVideo {
+            return NSSize(width: 340, height: 260)
+        }
+        
         let titleFont = titleLabel.font ?? NSFont.systemFont(ofSize: 13)
         let artistFont = artistLabel.font ?? NSFont.systemFont(ofSize: 11)
         
@@ -289,7 +389,7 @@ public final class FloatingPillView: NSView {
         let artistWidth = (artistLabel.stringValue as NSString).size(withAttributes: [.font: artistFont]).width
         let maxTextWidth = min(max(titleWidth + (browserBadge.isHidden ? 0 : 70), artistWidth), 330)
         
-        let buttonsCount: CGFloat = copyButton.isHidden ? 2 : 3
+        let buttonsCount: CGFloat = 4
         let totalWidth = 16 + 36 + 10 + maxTextWidth + 12 + (buttonsCount * 26) + ((buttonsCount - 1) * 6) + 12
         return NSSize(width: max(380, totalWidth), height: 56)
     }
@@ -302,6 +402,10 @@ public final class FloatingPillView: NSView {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+    
+    @objc private func handlePlayPause() {
+        onTogglePlayPause?()
     }
     
     @objc private func handleCopy() {
