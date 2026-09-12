@@ -227,10 +227,9 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
             var lastAdState = false;
             var lastPlayState = null;
             var readyNotified = false;
-            var lastSeekTimestamp = 0;
-            window._songTopInitialSynced = false;
+            var currentRate = 1.0;
 
-            // Closed-loop dynamic frame synchronizer with seek debouncing and jitter damping
+            // Continuous silky-smooth frame synchronizer (eliminates hard-seek stutter during playback)
             window._songTopSync = function(targetTime, isPaused, delaySec) {
                 if (typeof targetTime !== 'number' || !isFinite(targetTime) || targetTime < 0) return;
                 var p = document.getElementById('movie_player');
@@ -252,11 +251,13 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     if (p && p.pauseVideo) {
                         try { p.pauseVideo(); } catch(e) {}
                     }
-                    // When paused, snap frame if off by more than 80ms
-                    if (Math.abs(v.currentTime - effectiveTarget) > 0.08) {
-                        v.currentTime = effectiveTarget;
+                    if (Math.abs(v.currentTime - effectiveTarget) > 0.10) {
+                        if (p && p.seekTo) {
+                            try { p.seekTo(effectiveTarget, true); } catch(e) {}
+                        }
                     }
-                    v.playbackRate = 1.0;
+                    if (v.playbackRate !== 1.0) v.playbackRate = 1.0;
+                    currentRate = 1.0;
                     return;
                 }
 
@@ -268,46 +269,41 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     try { p.playVideo(); } catch(e) {}
                 }
 
-                var diff = v.currentTime - effectiveTarget; // positive: panel video is ahead; negative: panel video is behind
-                var now = Date.now();
+                var cur = (p && p.getCurrentTime) ? p.getCurrentTime() : (v.currentTime || 0);
+                var diff = cur - effectiveTarget; // positive: panel is ahead; negative: panel is behind
 
-                // 1. Initial sync or major jump (> 1.2s, e.g. user scrubbed in browser)
-                if (!window._songTopInitialSynced || Math.abs(diff) > 1.2) {
+                // 1. Initial lock or major timeline jump (> 1.8s, e.g. user skipped or scrubbed in browser)
+                if (!window._songTopInitialSynced || Math.abs(diff) > 1.8) {
                     window._songTopInitialSynced = true;
-                    lastSeekTimestamp = now;
                     if (p && p.seekTo) {
                         try { p.seekTo(effectiveTarget, true); } catch(e) {}
                     }
-                    v.currentTime = effectiveTarget;
-                    v.playbackRate = 1.0;
+                    if (v.playbackRate !== 1.0) v.playbackRate = 1.0;
+                    currentRate = 1.0;
                     return;
                 }
 
-                // 2. Prevent seek thrashing! Keep at least 2.5s between hard seeks so playback is silky smooth
-                if (now - lastSeekTimestamp < 2500) {
-                    return;
-                }
-
-                // 3. Significant drift (> 0.45s): snap frame cleanly
-                if (Math.abs(diff) > 0.45) {
-                    lastSeekTimestamp = now;
-                    if (p && p.seekTo) {
-                        try { p.seekTo(effectiveTarget, true); } catch(e) {}
+                // 2. Smooth drift elimination with hysteresis (NEVER hard-seeks during normal playback!)
+                // Deadband ±0.06s (within 2 frames at 30fps): rock-solid 1.0x native rate
+                if (Math.abs(diff) <= 0.06) {
+                    if (currentRate !== 1.0) {
+                        currentRate = 1.0;
+                        v.playbackRate = 1.0;
                     }
-                    v.currentTime = effectiveTarget;
-                    v.playbackRate = 1.0;
-                    return;
                 }
-
-                // 4. Subtle, imperceptible rate convergence (±4%)
-                // Micro-adjusting by 4% is invisible to human eye, perfectly eliminates small drift,
-                // and NEVER triggers YouTube buffer re-requests or stuttering
-                if (diff < -0.06) {
-                    v.playbackRate = 1.04;
-                } else if (diff > 0.06) {
-                    v.playbackRate = 0.96;
-                } else {
-                    v.playbackRate = 1.0;
+                // Panel is behind by > 0.10s: gently converge at 1.04x (+4% speed, imperceptible, silky smooth)
+                else if (diff < -0.10) {
+                    if (currentRate !== 1.04) {
+                        currentRate = 1.04;
+                        v.playbackRate = 1.04;
+                    }
+                }
+                // Panel is ahead by > 0.10s: gently ease back at 0.96x (-4% speed)
+                else if (diff > 0.10) {
+                    if (currentRate !== 0.96) {
+                        currentRate = 0.96;
+                        v.playbackRate = 0.96;
+                    }
                 }
             };
 
@@ -619,9 +615,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
             } else {
                 var effective = Math.max(0, \(targetTime) - \(syncDelay));
                 var p = document.getElementById('movie_player');
-                var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
-                if (v && Math.abs(v.currentTime - effective) > 1.0) {
-                    v.currentTime = effective;
+                if (p && p.seekTo) {
+                    p.seekTo(effective, true);
                 }
             }
         })();
@@ -682,11 +677,11 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
         let js = """
         (function() {
             var p = document.getElementById('movie_player');
-            if (p && p.seekTo) { p.seekTo(\(effective), true); }
-            var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
-            if (v) {
-                v.currentTime = \(effective);
-                v.playbackRate = 1.0;
+            if (p && p.seekTo) {
+                p.seekTo(\(effective), true);
+            } else {
+                var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+                if (v) { v.currentTime = \(effective); }
             }
         })();
         """
