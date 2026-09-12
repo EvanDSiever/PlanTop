@@ -209,6 +209,17 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Pin Side Panel
+        let pinItem = NSMenuItem(
+            title: "Pin Side Panel on Screen",
+            action: #selector(togglePinClicked),
+            keyEquivalent: "k"
+        )
+        pinItem.target = self
+        pinItem.image = NSImage(systemSymbolName: pillController.isPinned ? "pin.fill" : "pin", accessibilityDescription: nil)
+        pinItem.state = pillController.isPinned ? .on : .off
+        menu.addItem(pinItem)
+        
         let toggleTitleItem = NSMenuItem(
             title: "Show Song Name in Menu Bar",
             action: #selector(toggleShowTitle),
@@ -243,9 +254,15 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         // Quit
         let quitItem = NSMenuItem(title: "Quit SongTop", action: #selector(quitClicked), keyEquivalent: "q")
         quitItem.target = self
+        quitItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
         menu.addItem(quitItem)
         
         statusItem.menu = menu
+    }
+    
+    @objc private func togglePinClicked() {
+        pillController.togglePin()
+        buildMenu(track: detector.currentTrack)
     }
     
     @objc private func openTabClicked() {
@@ -296,6 +313,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         pillController.displayMode = .menuBarOnly
         buildMenu(track: detector.currentTrack)
     }
+    
     
     @objc private func toggleShowTitle() {
         showTitleInMenuBar.toggle()

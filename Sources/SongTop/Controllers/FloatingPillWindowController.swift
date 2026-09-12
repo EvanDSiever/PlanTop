@@ -78,6 +78,52 @@ public final class FloatingPillWindowController: NSObject {
         }
     }
     
+    private var isLiveResizing: Bool = false
+    
+    // Dynamic Drag-Scaling width (260px - 650px)
+    public var customPanelWidth: CGFloat = 340 {
+        didSet {
+            let clamped = max(260, min(650, customPanelWidth))
+            if customPanelWidth != clamped {
+                customPanelWidth = clamped
+                return
+            }
+            UserDefaults.standard.set(Double(customPanelWidth), forKey: "customPanelWidth")
+            pillView?.preferredPanelWidth = customPanelWidth
+            if isDroppedDown && !isLiveResizing {
+                repositionPanel()
+            }
+            if !isLiveResizing {
+                NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+            }
+        }
+    }
+    
+    // Permanent Pinning
+    public var isPinned: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isPinned, forKey: "isSidePanelPinned")
+            pillView?.isPinned = isPinned
+            if isPinned {
+                retractTimer?.invalidate()
+                retractTimer = nil
+                if !isDroppedDown {
+                    dropDown()
+                }
+            }
+            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+        }
+    }
+    
+    public func togglePin() {
+        isPinned.toggle()
+        if !isPinned && !isHoveringActive {
+            retractTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+                self?.retract()
+            }
+        }
+    }
+    
     public var isEnabled: Bool = true {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "isPillEnabled")
@@ -130,6 +176,13 @@ public final class FloatingPillWindowController: NSObject {
         self.detector = detector
         super.init()
         
+        if UserDefaults.standard.object(forKey: "customPanelWidth") != nil {
+            let savedW = CGFloat(UserDefaults.standard.double(forKey: "customPanelWidth"))
+            self.customPanelWidth = max(260, min(650, savedW))
+        }
+        if UserDefaults.standard.object(forKey: "isSidePanelPinned") != nil {
+            self.isPinned = UserDefaults.standard.bool(forKey: "isSidePanelPinned")
+        }
         if UserDefaults.standard.object(forKey: "isVideoPreviewEnabled") != nil {
             self.isVideoPreviewEnabled = UserDefaults.standard.bool(forKey: "isVideoPreviewEnabled")
         }
@@ -205,6 +258,7 @@ public final class FloatingPillWindowController: NSObject {
     
     private func checkMousePositionBackground() {
         guard isEnabled && hoverDropOnly else { return }
+        if isPinned { return }
         
         let mouse = NSEvent.mouseLocation
         
@@ -455,7 +509,9 @@ public final class FloatingPillWindowController: NSObject {
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         
-        let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: 400, height: 56))
+        let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: customPanelWidth, height: 56))
+        pv.preferredPanelWidth = customPanelWidth
+        pv.isPinned = isPinned
         pv.isVideoPreviewEnabled = isVideoPreviewEnabled
         pv.onOpenTab = { [weak detector] in
             if let t = detector?.currentTrack {
@@ -467,6 +523,15 @@ public final class FloatingPillWindowController: NSObject {
                 detector?.togglePlayPause(track: t)
             }
         }
+        pv.onTogglePin = { [weak self] in
+            self?.togglePin()
+        }
+        pv.onResizeWidthChanged = { [weak self] width in
+            self?.handleLiveResize(width: width)
+        }
+        pv.onResizeCompleted = { [weak self] in
+            self?.handleResizeCompleted()
+        }
         pv.onCopyTitle = { [weak detector] in
             if let t = detector?.currentTrack {
                 let pasteboard = NSPasteboard.general
@@ -475,10 +540,15 @@ public final class FloatingPillWindowController: NSObject {
             }
         }
         pv.onDismiss = { [weak self] in
-            self?.retract(immediately: false)
+            guard let self = self else { return }
+            if self.isPinned {
+                self.isPinned = false
+            }
+            self.retract(immediately: false)
         }
         pv.onHoverStateChanged = { [weak self] isHovered in
             guard let self = self else { return }
+            if self.isPinned { return }
             if isHovered {
                 self.retractTimer?.invalidate()
                 self.retractTimer = nil
@@ -515,6 +585,7 @@ public final class FloatingPillWindowController: NSObject {
         guard let screen = NSScreen.main else { return }
         let (panel, pv) = setupPillPanel()
         
+        pv.preferredPanelWidth = customPanelWidth
         pv.update(with: detector.currentTrack)
         let fittingSize = pv.calculateFittingSize()
         panel.setContentSize(fittingSize)
@@ -544,6 +615,9 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     public func retract(immediately: Bool = false) {
+        if isPinned && !immediately {
+            return
+        }
         guard let panel = pillPanel, let pv = pillView, isDroppedDown || panel.isVisible else { return }
         isDroppedDown = false
         isPillVisibleInternal = false
@@ -567,16 +641,40 @@ public final class FloatingPillWindowController: NSObject {
         }
     }
     
+    public func handleLiveResize(width: CGFloat) {
+        isLiveResizing = true
+        let clamped = max(260, min(650, width))
+        guard let panel = pillPanel, let pv = pillView, let screen = NSScreen.main else { return }
+        pv.preferredPanelWidth = clamped
+        let fittingSize = pv.calculateFittingSize()
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let targetX = screenFrame.maxX - fittingSize.width
+        let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
+        
+        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
+        panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
+        pv.frame = NSRect(origin: .zero, size: fittingSize)
+    }
+    
+    public func handleResizeCompleted() {
+        guard isLiveResizing else { return }
+        isLiveResizing = false
+        if let pv = pillView {
+            customPanelWidth = pv.preferredPanelWidth
+        }
+    }
+    
     private func repositionPanel() {
         guard let screen = NSScreen.main, let panel = pillPanel, let pv = pillView else { return }
+        pv.preferredPanelWidth = customPanelWidth
         let fittingSize = pv.calculateFittingSize()
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         let targetX = screenFrame.maxX - fittingSize.width
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
-        panel.setContentSize(fittingSize)
+        panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
-        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }
 }

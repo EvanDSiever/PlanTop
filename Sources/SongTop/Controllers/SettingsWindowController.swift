@@ -22,8 +22,11 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let sensitivityValueLabel = NSTextField(labelWithString: "Instant (0.0s)")
     private let guideButton = NSButton(title: "🎯 Highlight Right Zone", target: nil, action: nil)
     
-    // Video Preview Control
+    // Video Preview & Sizing Controls
     private let videoPreviewCheckbox = NSButton(checkboxWithTitle: "Show video playing in side panel when active (Muted by default)", target: nil, action: nil)
+    private let pinCheckbox = NSButton(checkboxWithTitle: "📌 Pin side panel on screen permanently", target: nil, action: nil)
+    private let panelWidthSlider = NSSlider(value: 340, minValue: 260, maxValue: 650, target: nil, action: nil)
+    private let panelWidthValueLabel = NSTextField(labelWithString: "340 px")
     
     // Auto Peek Controls
     private let autoPeekCheckbox = NSButton(checkboxWithTitle: "Automatically stretch out when a new song starts", target: nil, action: nil)
@@ -284,21 +287,50 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         currentY -= 115
         
-        // 6. Live Video Playback Card
-        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY - 74, width: 480, height: 68))
+        currentY -= 115
+        
+        // 6. Live Video Playback & Sizing Card
+        let videoCard = createCardView(frame: NSRect(x: 20, y: currentY - 146, width: 480, height: 140))
         container.addSubview(videoCard)
         
-        let videoTitle = NSTextField(labelWithString: "Live Video Playback")
+        let videoTitle = NSTextField(labelWithString: "Live Video Playback & Dynamic Sizing")
         videoTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        videoTitle.frame = NSRect(x: 14, y: 44, width: 300, height: 16)
+        videoTitle.frame = NSRect(x: 14, y: 114, width: 320, height: 16)
         videoCard.addSubview(videoTitle)
         
-        videoPreviewCheckbox.frame = NSRect(x: 14, y: 16, width: 450, height: 18)
+        videoPreviewCheckbox.frame = NSRect(x: 14, y: 88, width: 450, height: 18)
         videoPreviewCheckbox.target = self
         videoPreviewCheckbox.action = #selector(videoPreviewToggled)
         videoCard.addSubview(videoPreviewCheckbox)
         
-        currentY -= 88
+        pinCheckbox.frame = NSRect(x: 14, y: 62, width: 450, height: 18)
+        pinCheckbox.target = self
+        pinCheckbox.action = #selector(pinCheckboxToggled)
+        videoCard.addSubview(pinCheckbox)
+        
+        let pwLabel = NSTextField(labelWithString: "Panel Width:")
+        pwLabel.font = NSFont.systemFont(ofSize: 11)
+        pwLabel.frame = NSRect(x: 14, y: 28, width: 85, height: 16)
+        videoCard.addSubview(pwLabel)
+        
+        panelWidthSlider.isContinuous = true
+        panelWidthSlider.frame = NSRect(x: 105, y: 26, width: 290, height: 20)
+        panelWidthSlider.target = self
+        panelWidthSlider.action = #selector(panelWidthSliderChanged)
+        videoCard.addSubview(panelWidthSlider)
+        
+        panelWidthValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        panelWidthValueLabel.alignment = .right
+        panelWidthValueLabel.frame = NSRect(x: 400, y: 28, width: 65, height: 16)
+        videoCard.addSubview(panelWidthValueLabel)
+        
+        let dragTip = NSTextField(labelWithString: "💡 Tip: You can also drag the left edge of the side panel to resize it interactively!")
+        dragTip.font = NSFont.systemFont(ofSize: 10)
+        dragTip.textColor = .secondaryLabelColor
+        dragTip.frame = NSRect(x: 14, y: 8, width: 450, height: 14)
+        videoCard.addSubview(dragTip)
+        
+        currentY -= 160
         
         // 7. Menu Bar Options Card
         let menuCard = createCardView(frame: NSRect(x: 20, y: currentY - 60, width: 480, height: 54))
@@ -379,6 +411,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         updateSensitivityLabel(delay: pillController.hoverDelay)
         
         videoPreviewCheckbox.state = pillController.isVideoPreviewEnabled ? .on : .off
+        pinCheckbox.state = pillController.isPinned ? .on : .off
+        
+        panelWidthSlider.doubleValue = Double(pillController.customPanelWidth)
+        panelWidthValueLabel.stringValue = "\(Int(pillController.customPanelWidth)) px"
         
         autoPeekCheckbox.state = pillController.autoPeekEnabled ? .on : .off
         peekDurationSlider.doubleValue = pillController.peekDuration
@@ -434,6 +470,16 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func videoPreviewToggled() {
         pillController.isVideoPreviewEnabled = (videoPreviewCheckbox.state == .on)
+    }
+    
+    @objc private func pinCheckboxToggled() {
+        pillController.isPinned = (pinCheckbox.state == .on)
+    }
+    
+    @objc private func panelWidthSliderChanged() {
+        let val = CGFloat(panelWidthSlider.doubleValue)
+        pillController.customPanelWidth = val
+        panelWidthValueLabel.stringValue = "\(Int(val)) px"
     }
     
     @objc private func autoPeekToggled() {

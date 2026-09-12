@@ -1,8 +1,33 @@
 import AppKit
 
+final class ResizeHandleView: NSView {
+    var onMouseDown: ((NSEvent) -> Void)?
+    var onMouseDragged: ((NSEvent) -> Void)?
+    var onMouseUp: ((NSEvent) -> Void)?
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?(event)
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        onMouseDragged?(event)
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        onMouseUp?(event)
+    }
+}
+
 public final class FloatingPillView: NSView {
     private let clipContainer = NSView()
     private let visualEffectView = NSVisualEffectView()
+    private let resizeHandle = ResizeHandleView()
+    private let gripBar = NSView()
     private let badgeContainer = NSView()
     private let equalizerView = EqualizerView(barColor: .white)
     
@@ -13,6 +38,23 @@ public final class FloatingPillView: NSView {
             update(with: currentTrack)
         }
     }
+    
+    // Dynamic Drag-Scaling Support
+    public var preferredPanelWidth: CGFloat = 340
+    public var onResizeWidthChanged: ((CGFloat) -> Void)?
+    public var onResizeCompleted: (() -> Void)?
+    private var isDraggingResize: Bool = false
+    private var dragStartMouseX: CGFloat = 0
+    private var dragStartWidth: CGFloat = 0
+    
+    // Pin Control
+    private let pinButton = NSButton()
+    public var isPinned: Bool = false {
+        didSet {
+            updatePinButtonIcon()
+        }
+    }
+    public var onTogglePin: (() -> Void)?
     
     private let titleLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
@@ -67,13 +109,33 @@ public final class FloatingPillView: NSView {
         visualEffectView.appearance = NSAppearance(named: .darkAqua)
         clipContainer.addSubview(visualEffectView)
         
-        // Left Edge Drawer Accent Grip Bar
-        let gripBar = NSView()
+        // Left Edge Drawer Accent Grip Bar & Interactive Resize Handle
+        resizeHandle.wantsLayer = true
+        resizeHandle.onMouseDown = { [weak self] event in
+            guard let self = self else { return }
+            self.isDraggingResize = true
+            self.dragStartMouseX = NSEvent.mouseLocation.x
+            self.dragStartWidth = self.bounds.width
+        }
+        resizeHandle.onMouseDragged = { [weak self] event in
+            guard let self = self, self.isDraggingResize else { return }
+            let currentMouseX = NSEvent.mouseLocation.x
+            let delta = self.dragStartMouseX - currentMouseX
+            let targetWidth = max(260, min(650, self.dragStartWidth + delta))
+            self.preferredPanelWidth = targetWidth
+            self.onResizeWidthChanged?(targetWidth)
+        }
+        resizeHandle.onMouseUp = { [weak self] event in
+            guard let self = self, self.isDraggingResize else { return }
+            self.isDraggingResize = false
+            self.onResizeCompleted?()
+        }
+        visualEffectView.addSubview(resizeHandle)
+        
         gripBar.wantsLayer = true
         gripBar.layer?.cornerRadius = 2
-        gripBar.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.35).cgColor
-        gripBar.identifier = NSUserInterfaceItemIdentifier("gripBar")
-        visualEffectView.addSubview(gripBar)
+        gripBar.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.45).cgColor
+        resizeHandle.addSubview(gripBar)
         
         // Video Player View (16:9 Live Preview)
         videoPlayerView.wantsLayer = true
@@ -131,6 +193,13 @@ public final class FloatingPillView: NSView {
         artistLabel.lineBreakMode = .byTruncatingTail
         visualEffectView.addSubview(artistLabel)
         
+        // Pin Button
+        configureIconButton(pinButton, symbol: "pin", tooltip: "Pin Panel on Screen")
+        pinButton.target = self
+        pinButton.action = #selector(handlePinToggle)
+        visualEffectView.addSubview(pinButton)
+        updatePinButtonIcon()
+        
         // Play / Pause Button
         configureIconButton(playPauseButton, symbol: "pause.fill", tooltip: "Play / Pause Video")
         playPauseButton.target = self
@@ -154,6 +223,47 @@ public final class FloatingPillView: NSView {
         closeButton.target = self
         closeButton.action = #selector(handleClose)
         visualEffectView.addSubview(closeButton)
+    }
+    
+    // Left Edge Drag-Resize Cursor Support
+    public override func resetCursorRects() {
+        super.resetCursorRects()
+        // Left 16px interactive resize region
+        let resizeRect = NSRect(x: 0, y: 0, width: 16, height: bounds.height)
+        addCursorRect(resizeRect, cursor: .resizeLeftRight)
+    }
+    
+    public override func mouseDown(with event: NSEvent) {
+        let localPoint = convert(event.locationInWindow, from: nil)
+        if localPoint.x <= 16 {
+            isDraggingResize = true
+            dragStartMouseX = NSEvent.mouseLocation.x
+            dragStartWidth = bounds.width
+            return
+        }
+        super.mouseDown(with: event)
+    }
+    
+    public override func mouseDragged(with event: NSEvent) {
+        if isDraggingResize {
+            let currentMouseX = NSEvent.mouseLocation.x
+            // Dragging to the left (decreasing X) increases width into the screen
+            let delta = dragStartMouseX - currentMouseX
+            let targetWidth = max(260, min(650, dragStartWidth + delta))
+            preferredPanelWidth = targetWidth
+            onResizeWidthChanged?(targetWidth)
+            return
+        }
+        super.mouseDragged(with: event)
+    }
+    
+    public override func mouseUp(with event: NSEvent) {
+        if isDraggingResize {
+            isDraggingResize = false
+            onResizeCompleted?()
+            return
+        }
+        super.mouseUp(with: event)
     }
     
     public override func updateTrackingAreas() {
@@ -194,6 +304,22 @@ public final class FloatingPillView: NSView {
             button.imagePosition = .imageOnly
             button.contentTintColor = .white
         }
+    }
+    
+    private func updatePinButtonIcon() {
+        let symbolName = isPinned ? "pin.fill" : "pin"
+        let tooltip = isPinned ? "Unpin Panel (Auto-Retract on Mouse Leave)" : "Pin Panel on Screen (Keep Permanently Visible)"
+        pinButton.toolTip = tooltip
+        
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)?.withSymbolConfiguration(config) {
+            pinButton.image = img
+            pinButton.imagePosition = .imageOnly
+            pinButton.contentTintColor = isPinned ? NSColor(red: 0.1, green: 0.85, blue: 1.0, alpha: 1.0) : .white
+        }
+        pinButton.layer?.backgroundColor = isPinned
+            ? NSColor(red: 0.1, green: 0.85, blue: 1.0, alpha: 0.28).cgColor
+            : NSColor(white: 1.0, alpha: 0.14).cgColor
     }
     
     public func update(with track: TrackInfo?) {
@@ -254,11 +380,13 @@ public final class FloatingPillView: NSView {
         
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
         
+        let gripHeight: CGFloat = hasVideo ? 44 : 28
+        resizeHandle.frame = NSRect(x: 0, y: 0, width: 18, height: bounds.height)
+        gripBar.frame = NSRect(x: 5, y: (bounds.height - gripHeight) / 2, width: 3.5, height: gripHeight)
+        window?.invalidateCursorRects(for: resizeHandle)
+        
         if hasVideo {
-            // Video Mode Layout (340 wide x 260 tall)
-            if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
-                grip.frame = NSRect(x: 5, y: (bounds.height - 44) / 2, width: 3.5, height: 44)
-            }
+            // Video Mode Layout (dynamic width x proportional 16:9 height)
             
             let padLeft: CGFloat = 18
             let padRight: CGFloat = 14
@@ -281,9 +409,10 @@ public final class FloatingPillView: NSView {
             openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
             copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
             playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
+            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - btnSize, y: (videoY - btnSize) / 2, width: btnSize, height: btnSize)
             
             let textLeft = badgeContainer.frame.maxX + 8
-            let textRight = playPauseButton.frame.minX - 8
+            let textRight = pinButton.frame.minX - 8
             let textWidth = max(50, textRight - textLeft)
             
             titleLabel.frame = NSRect(x: textLeft, y: (videoY / 2) + 1, width: textWidth, height: 16)
@@ -292,10 +421,6 @@ public final class FloatingPillView: NSView {
         } else {
             // Compact Audio Mode Layout (Height: 56)
             videoPlayerView.isHidden = true
-            
-            if let grip = visualEffectView.subviews.first(where: { $0.identifier?.rawValue == "gripBar" }) {
-                grip.frame = NSRect(x: 5, y: (bounds.height - 28) / 2, width: 3.5, height: 28)
-            }
             
             let paddingLeft: CGFloat = 16
             let paddingRight: CGFloat = 12
@@ -310,18 +435,13 @@ public final class FloatingPillView: NSView {
             
             closeButton.frame = NSRect(x: bounds.width - paddingRight - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
             openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            
-            if copyButton.isHidden {
-                playPauseButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            } else {
-                copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-                playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
-            }
+            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - buttonSize, y: (bounds.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
             
             let textLeft = badgeContainer.frame.maxX + 10
-            let rightmostBtn = playPauseButton.isHidden ? (copyButton.isHidden ? openButton : copyButton) : playPauseButton
-            let textRight = rightmostBtn.frame.minX - 10
-            let availableWidth = max(100, textRight - textLeft)
+            let textRight = pinButton.frame.minX - 10
+            let availableWidth = max(80, textRight - textLeft)
             
             if browserBadge.isHidden {
                 titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: min(availableWidth, 320), height: 18)
@@ -377,9 +497,17 @@ public final class FloatingPillView: NSView {
     }
     
     public func calculateFittingSize() -> NSSize {
+        let width = max(260, min(650, preferredPanelWidth))
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
         if hasVideo {
-            return NSSize(width: 340, height: 260)
+            let padLeft: CGFloat = 18
+            let padRight: CGFloat = 14
+            let videoW = width - padLeft - padRight
+            let videoH = videoW * 9.0 / 16.0
+            let bottomBarHeight: CGFloat = 73
+            let topPadding: CGFloat = 14
+            let height = topPadding + videoH + bottomBarHeight
+            return NSSize(width: width, height: height)
         }
         
         let titleFont = titleLabel.font ?? NSFont.systemFont(ofSize: 13)
@@ -389,9 +517,9 @@ public final class FloatingPillView: NSView {
         let artistWidth = (artistLabel.stringValue as NSString).size(withAttributes: [.font: artistFont]).width
         let maxTextWidth = min(max(titleWidth + (browserBadge.isHidden ? 0 : 70), artistWidth), 330)
         
-        let buttonsCount: CGFloat = 4
+        let buttonsCount: CGFloat = 5
         let totalWidth = 16 + 36 + 10 + maxTextWidth + 12 + (buttonsCount * 26) + ((buttonsCount - 1) * 6) + 12
-        return NSSize(width: max(380, totalWidth), height: 56)
+        return NSSize(width: max(width, max(380, totalWidth)), height: 56)
     }
     
     @objc private func handleOpen() {
@@ -406,6 +534,10 @@ public final class FloatingPillView: NSView {
     
     @objc private func handlePlayPause() {
         onTogglePlayPause?()
+    }
+    
+    @objc private func handlePinToggle() {
+        onTogglePin?()
     }
     
     @objc private func handleCopy() {
