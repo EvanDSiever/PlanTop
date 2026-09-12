@@ -427,7 +427,7 @@ public final class FloatingPillView: NSView {
             : NSColor(white: 1.0, alpha: 0.14).cgColor
     }
     
-    public func update(with track: TrackInfo?) {
+    public func update(with track: TrackInfo?, initialSeconds: Double? = nil) {
         self.currentTrack = track
         
         let hasVideo = isVideoPreviewEnabled && (track?.isVideo ?? false)
@@ -451,7 +451,8 @@ public final class FloatingPillView: NSView {
                 videoPlayerView.clearVideo()
             } else if hasVideo, let vid = track.youtubeVideoId {
                 videoPlayerView.isHidden = false
-                videoPlayerView.loadVideo(id: vid, startSeconds: track.startSeconds ?? 0)
+                let startSec = initialSeconds ?? track.startSeconds ?? 0
+                videoPlayerView.loadVideo(id: vid, startSeconds: startSec)
                 if isStretchedOut {
                     videoPlayerView.play()
                 }
@@ -664,6 +665,9 @@ public final class FloatingPillView: NSView {
         if !animated {
             visualEffectView.frame = bounds
             videoPlayerView.play()
+            if videoPlayerView.browserCurrentTime > 0 {
+                videoPlayerView.syncWithBrowser(targetTime: videoPlayerView.browserCurrentTime, isPaused: false)
+            }
             return
         }
         visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
@@ -672,7 +676,11 @@ public final class FloatingPillView: NSView {
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
             visualEffectView.animator().frame = bounds
         }, completionHandler: { [weak self] in
-            self?.videoPlayerView.play()
+            guard let self = self else { return }
+            self.videoPlayerView.play()
+            if self.videoPlayerView.browserCurrentTime > 0 {
+                self.videoPlayerView.syncWithBrowser(targetTime: self.videoPlayerView.browserCurrentTime, isPaused: false)
+            }
         })
     }
     

@@ -29,7 +29,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     // Video Preview & Sizing Controls
     private let videoPreviewCheckbox = NSButton(checkboxWithTitle: "Show video playing in side panel when active", target: nil, action: nil)
-    private let pipCheckbox = NSButton(checkboxWithTitle: "📺 Enable Picture-in-Picture mode when switching away from tab", target: nil, action: nil)
+    private let pipCheckbox = NSButton(checkboxWithTitle: "📺 Enable Picture-in-Picture mode (video player in side panel)", target: nil, action: nil)
     private let pipAudioCheckbox = NSButton(checkboxWithTitle: "🔊 Transfer sound to side panel in Picture-in-Picture mode", target: nil, action: nil)
     private let pipSyncBackCheckbox = NSButton(checkboxWithTitle: "🔄 Sync watching progress back to webpage when returning to tab", target: nil, action: nil)
     private let nativePiPCompanionCheckbox = NSButton(checkboxWithTitle: "🎛️ Auto-dock companion controls when browser PiP is active", target: nil, action: nil)

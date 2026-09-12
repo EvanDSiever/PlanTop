@@ -395,6 +395,7 @@ public final class YouTubeDetector: ObservableObject {
     
     // Real-Time Playback Telemetry Query
     public func pollTabPlaybackState(track: TrackInfo, completion: (((cur: Double, dur: Double, paused: Bool, vol: Int, muted: Bool)?) -> Void)? = nil) {
+        let startTime = Date()
         let js = """
         (function() {
             var v = document.querySelector('video');
@@ -411,16 +412,22 @@ public final class YouTubeDetector: ObservableObject {
         
         executeInTabJS(track: track, script: js) { [weak self] result in
             guard let self = self else { return }
+            let latency = Date().timeIntervalSince(startTime)
             switch result {
             case .success(let jsonString):
                 if let data = jsonString.data(using: .utf8),
                    let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    dict["error"] == nil {
-                    let cur = dict["cur"] as? Double ?? 0
+                    var cur = dict["cur"] as? Double ?? 0
                     let dur = dict["dur"] as? Double ?? 0
                     let paused = dict["paused"] as? Bool ?? false
                     let vol = dict["vol"] as? Int ?? 100
                     let muted = dict["muted"] as? Bool ?? false
+                    
+                    // Compensate for AppleScript query latency if browser playback is active
+                    if !paused && latency > 0 && latency < 0.5 {
+                        cur += latency
+                    }
                     
                     self.tabCurrentTime = cur
                     if dur > 0 { self.tabDuration = dur }

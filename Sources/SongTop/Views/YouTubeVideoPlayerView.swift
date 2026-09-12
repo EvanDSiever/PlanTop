@@ -1,24 +1,100 @@
 import AppKit
+import WebKit
 
-public final class YouTubeVideoPlayerView: NSView {
+protocol YouTubeVideoPlayerDelegate: AnyObject {
+    func handleBridgeMessage(_ body: Any)
+}
+
+private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
+    weak var delegate: YouTubeVideoPlayerDelegate?
+    
+    init(delegate: YouTubeVideoPlayerDelegate) {
+        self.delegate = delegate
+    }
+    
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        delegate?.handleBridgeMessage(message.body)
+    }
+}
+
+private final class VideoClickOverlayView: NSView {
+    var onClicked: (() -> Void)?
+    var onSkipAdClicked: (() -> Void)?
+    var onHoverChanged: ((Bool) -> Void)?
+    var isAdActive: Bool = false
+    private var trackingArea: NSTrackingArea?
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = trackingArea {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        self.trackingArea = area
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHoverChanged?(true)
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHoverChanged?(false)
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if bounds.contains(point) {
+            // If an ad is active and user clicked in bottom-right skip button zone (within 110px of right and 46px of bottom):
+            if isAdActive && (point.x > bounds.width - 110 && point.y < 46) {
+                onSkipAdClicked?()
+                return
+            }
+            onClicked?()
+        }
+    }
+}
+
+public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, WKNavigationDelegate {
+    private var webView: WKWebView!
     private let thumbnailImageView = NSImageView()
+    private let clickOverlay = VideoClickOverlayView()
     private let playOverlay = NSImageView()
     private let loadingIndicator = NSProgressIndicator()
+    private let skipAdButton = NSButton()
     
     public private(set) var currentVideoId: String?
-    public private(set) var isMuted: Bool = false
+    public private(set) var isMuted: Bool = true
     public private(set) var isPlaying: Bool = true
     public private(set) var isReady: Bool = false
-    public private(set) var currentTime: Double = 0.0
+    public private(set) var isAdActive: Bool = false
+    public private(set) var browserCurrentTime: Double = 0.0
+    public private(set) var panelCurrentTime: Double = 0.0
     public private(set) var duration: Double = 0.0
     public private(set) var volume: Int = 100
+    private var shouldBePlaying: Bool = true
+    
+    public var currentTime: Double {
+        return browserCurrentTime > 0 ? browserCurrentTime : panelCurrentTime
+    }
     
     public var onVideoClicked: (() -> Void)?
     public var onPlaybackStateChanged: ((Bool) -> Void)?
     public var onProgressUpdated: ((Double, Double) -> Void)?
     public var onVolumeChanged: ((Int, Bool) -> Void)?
     
-    private var trackingArea: NSTrackingArea?
     private var isHovered: Bool = false
     
     public override init(frame frameRect: NSRect) {
@@ -31,6 +107,10 @@ public final class YouTubeVideoPlayerView: NSView {
         setupViews()
     }
     
+    deinit {
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "playerBridge")
+    }
+    
     private func setupViews() {
         wantsLayer = true
         layer?.cornerRadius = 12
@@ -39,20 +119,295 @@ public final class YouTubeVideoPlayerView: NSView {
         layer?.borderWidth = 1.0
         layer?.borderColor = NSColor(white: 1.0, alpha: 0.16).cgColor
         
-        // Crisp Video Artwork / Thumbnail
+        // 1. Crisp Video Artwork / Thumbnail (Immediate display while video stream buffers)
         thumbnailImageView.imageScaling = .scaleProportionallyUpOrDown
         thumbnailImageView.wantsLayer = true
         thumbnailImageView.layer?.cornerRadius = 12
         thumbnailImageView.layer?.masksToBounds = true
         addSubview(thumbnailImageView)
         
-        // Subtle Centered Play/Pause Indicator (Fades in slightly on hover)
+        // 2. WebKit Live Video Player
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = WKWebsiteDataStore.default()
+        config.mediaTypesRequiringUserActionForPlayback = []
+        config.allowsAirPlayForMediaPlayback = false
+        
+        let ucc = WKUserContentController()
+        let proxy = ScriptMessageProxy(delegate: self)
+        ucc.add(proxy, name: "playerBridge")
+        
+        // Injected CSS: Isolates the video element to 100vw x 100vh and hides all mastheads/sidebars/comments and endscreen cards
+        let injectedCSS = """
+        html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: #000 !important;
+        }
+        #masthead-container, #secondary, #below, #chat-container, ytd-miniplayer, #guide, tp-yt-app-drawer, #comments, ytd-watch-metadata, #related, ytd-merch-shelf-renderer, ytd-banner-promo-renderer, #clarify-box, #donation-shelf, #panels, #ticket-shelf, #actions, #meta, #info, ytd-engagement-panel-section-list-renderer, ytd-popup-container, #guide-wrapper, #voice-search-button, #search-form,
+        .ytp-endscreen-content, .ytp-autonav-endscreen, .ytp-ce-element, .ytp-ce-covering-overlay, .ytp-ce-element-show, .ytp-upnext, .ytp-pause-overlay {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+        }
+        #movie_player, .html5-video-player, #player-theater-container, #player-container-outer, #player-container-inner, #player-container {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            z-index: 99999 !important;
+            background: #000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        video.html5-main-video {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            object-fit: contain !important;
+        }
+        .ytp-chrome-top, .ytp-title-text, .ytp-title-channel, .ytp-title, .ytp-gradient-top, .ytp-gradient-bottom, .ytp-chrome-bottom, .ytp-watermark, .ytp-bezel, .ytp-bezel-text, .ytp-paid-content-overlay {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+        .ytp-ad-module, .ytp-ad-player-overlay, .ytp-ad-player-overlay-layout, .ytp-ad-skip-button-container, .ytp-ad-skip-button-modern, .ytp-ad-skip-button, .videoAdUiSkipButton, .ytp-skip-ad-button {
+            display: block !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+            z-index: 100000 !important;
+        }
+        """
+        let escapedCSS = injectedCSS.replacingOccurrences(of: "\n", with: " ")
+        let styleInjectionJS = """
+        (function() {
+            function injectStyle() {
+                if (!document.getElementById('songtop-player-style')) {
+                    var s = document.createElement('style');
+                    s.id = 'songtop-player-style';
+                    s.textContent = `\(escapedCSS)`;
+                    (document.head || document.documentElement).appendChild(s);
+                }
+            }
+            injectStyle();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', injectStyle);
+            }
+        })();
+        """
+        ucc.addUserScript(WKUserScript(source: styleInjectionJS, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        
+        // Injected JS: Real-time video player control, accurate ad detection without false triggers, and playback reporting
+        let injectedBridgeJS = """
+        (function() {
+            if (window._songTopInjected) return;
+            window._songTopInjected = true;
+
+            var lastAdState = false;
+            var lastPlayState = null;
+            var readyNotified = false;
+
+            // Closed-loop dynamic playback rate drift synchronizer
+            window._songTopSync = function(targetTime, isPaused) {
+                if (typeof targetTime !== 'number' || !isFinite(targetTime) || targetTime < 0) return;
+                var p = document.getElementById('movie_player');
+                var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+                if (!v) return;
+
+                // Never interfere while an ad is active
+                if (p && p.classList && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) {
+                    return;
+                }
+
+                if (isPaused) {
+                    if (!v.paused) {
+                        try { v.pause(); } catch(e) {}
+                    }
+                    if (p && p.pauseVideo) {
+                        try { p.pauseVideo(); } catch(e) {}
+                    }
+                    // When paused, align frame if off by more than 100ms
+                    if (Math.abs(v.currentTime - targetTime) > 0.10) {
+                        v.currentTime = targetTime;
+                    }
+                    v.playbackRate = 1.0;
+                    return;
+                }
+
+                // Should be playing
+                if (v.paused) {
+                    try { v.play().catch(function(){}); } catch(e) {}
+                }
+                if (p && p.playVideo && p.getPlayerState && p.getPlayerState() !== 1) {
+                    try { p.playVideo(); } catch(e) {}
+                }
+
+                var diff = v.currentTime - targetTime; // positive: panel video is ahead; negative: panel video is behind
+
+                // 1. Large jump (> 1.2s): hard seek to snap instantly
+                if (Math.abs(diff) > 1.2) {
+                    if (p && p.seekTo) {
+                        try { p.seekTo(targetTime, true); } catch(e) {}
+                    }
+                    v.currentTime = targetTime;
+                    v.playbackRate = 1.0;
+                    return;
+                }
+
+                // 2. Smooth drift compensation via playbackRate (no seeking stutter)
+                // Video is ahead of audio (diff > 0): slow down
+                if (diff > 0.40) {
+                    v.playbackRate = 0.75;
+                } else if (diff > 0.18) {
+                    v.playbackRate = 0.88;
+                } else if (diff > 0.05) {
+                    v.playbackRate = 0.95;
+                }
+                // Video is behind audio (diff < 0): speed up
+                else if (diff < -0.40) {
+                    v.playbackRate = 1.25;
+                } else if (diff < -0.18) {
+                    v.playbackRate = 1.12;
+                } else if (diff < -0.05) {
+                    v.playbackRate = 1.05;
+                }
+                // Within ±0.05s (50ms): in tight lip-sync!
+                else {
+                    v.playbackRate = 1.0;
+                }
+            };
+
+            setInterval(function() {
+                var p = document.getElementById('movie_player');
+                var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+
+                if (p) {
+                    try { p.mute(); } catch(e) {}
+                }
+                if (v) {
+                    v.muted = true;
+                }
+
+                // Strict ad detection (checks actual player classes, avoids false positives)
+                var isAd = false;
+                if (p && p.classList) {
+                    if (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting')) {
+                        isAd = true;
+                    }
+                }
+
+                if (isAd !== lastAdState) {
+                    lastAdState = isAd;
+                    try { window.webkit.messageHandlers.playerBridge.postMessage(isAd ? 'ad_detected' : 'ad_cleared'); } catch(e) {}
+                }
+
+                if (isAd) {
+                    // Try auto-clicking YouTube skip button if ready
+                    var skipButtons = [
+                        '.ytp-ad-skip-button-modern',
+                        '.ytp-ad-skip-button',
+                        '.videoAdUiSkipButton',
+                        '.ytp-skip-ad-button',
+                        '.ytp-ad-skip-button-container button',
+                        'button.ytp-ad-skip-button-modern'
+                    ];
+                    for (var i = 0; i < skipButtons.length; i++) {
+                        var btn = document.querySelector(skipButtons[i]);
+                        if (btn) {
+                            try { btn.click(); } catch(e) {}
+                        }
+                    }
+                } else if (v) {
+                    if (!readyNotified && (v.readyState >= 1 || (p && p.getPlayerState))) {
+                        readyNotified = true;
+                        try { window.webkit.messageHandlers.playerBridge.postMessage('ready'); } catch(e) {}
+                    }
+
+                    var pState = (p && p.getPlayerState) ? p.getPlayerState() : -1;
+                    var isPlaying = (pState === 1) || (!v.paused && !v.ended && v.readyState >= 2);
+                    var stateMsg = isPlaying ? 'state_1' : 'state_2';
+                    if (stateMsg !== lastPlayState) {
+                        lastPlayState = stateMsg;
+                        try { window.webkit.messageHandlers.playerBridge.postMessage(stateMsg); } catch(e) {}
+                    }
+
+                    var cur = (p && p.getCurrentTime) ? p.getCurrentTime() : (v.currentTime || 0);
+                    var dur = (p && p.getDuration) ? p.getDuration() : (v.duration || 0);
+                    try {
+                        window.webkit.messageHandlers.playerBridge.postMessage('progress_' + cur.toFixed(2) + '_' + dur.toFixed(1));
+                    } catch(e) {}
+                }
+            }, 250);
+        })();
+        """
+        ucc.addUserScript(WKUserScript(source: injectedBridgeJS, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        
+        config.userContentController = ucc
+        
+        webView = WKWebView(frame: bounds, configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.wantsLayer = true
+        webView.layer?.cornerRadius = 12
+        webView.layer?.masksToBounds = true
+        webView.navigationDelegate = self
+        webView.alphaValue = 0.0
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+        addSubview(webView)
+        
+        // 3. Transparent Click & Hover Overlay
+        clickOverlay.wantsLayer = true
+        clickOverlay.onClicked = { [weak self] in
+            self?.onVideoClicked?()
+        }
+        clickOverlay.onSkipAdClicked = { [weak self] in
+            self?.skipAd()
+        }
+        clickOverlay.onHoverChanged = { [weak self] isHovered in
+            guard let self = self else { return }
+            self.isHovered = isHovered
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                self.playOverlay.animator().alphaValue = isHovered ? 0.85 : 0.0
+            }
+        }
+        addSubview(clickOverlay)
+        
+        // 4. Subtle Centered Play/Pause Indicator (Fades in on hover)
         playOverlay.wantsLayer = true
         playOverlay.alphaValue = 0.0
         updatePlayOverlayIcon()
         addSubview(playOverlay)
         
-        // Loading Spinner
+        // 5. Interactive Native Skip Ad Button
+        skipAdButton.title = "⏭️ Skip Ad"
+        skipAdButton.isBordered = false
+        skipAdButton.wantsLayer = true
+        skipAdButton.layer?.cornerRadius = 8
+        skipAdButton.layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.92).cgColor
+        skipAdButton.layer?.borderWidth = 1.0
+        skipAdButton.layer?.borderColor = NSColor(white: 1.0, alpha: 0.25).cgColor
+        skipAdButton.layer?.shadowColor = NSColor.black.cgColor
+        skipAdButton.layer?.shadowOpacity = 0.6
+        skipAdButton.layer?.shadowRadius = 6
+        skipAdButton.layer?.shadowOffset = CGSize(width: 0, height: -2)
+        skipAdButton.font = NSFont.systemFont(ofSize: 11, weight: .bold)
+        skipAdButton.contentTintColor = .white
+        skipAdButton.target = self
+        skipAdButton.action = #selector(handleSkipAdClicked)
+        skipAdButton.alphaValue = 0.0
+        skipAdButton.isHidden = true
+        addSubview(skipAdButton)
+        
+        // 6. Loading Spinner
         loadingIndicator.style = .spinning
         loadingIndicator.controlSize = .small
         loadingIndicator.isDisplayedWhenStopped = false
@@ -62,6 +417,8 @@ public final class YouTubeVideoPlayerView: NSView {
     public override func layout() {
         super.layout()
         thumbnailImageView.frame = bounds
+        webView.frame = bounds
+        clickOverlay.frame = bounds
         
         let overlaySize: CGFloat = 44
         playOverlay.frame = NSRect(
@@ -78,51 +435,15 @@ public final class YouTubeVideoPlayerView: NSView {
             width: spinnerSize,
             height: spinnerSize
         )
-    }
-    
-    public override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let area = trackingArea {
-            removeTrackingArea(area)
-        }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
+        
+        let skipW: CGFloat = 88
+        let skipH: CGFloat = 26
+        skipAdButton.frame = NSRect(
+            x: bounds.width - skipW - 10,
+            y: 10,
+            width: skipW,
+            height: skipH
         )
-        addTrackingArea(area)
-        self.trackingArea = area
-    }
-    
-    public override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-    
-    public override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        isHovered = true
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            playOverlay.animator().alphaValue = 0.85
-        }
-    }
-    
-    public override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        isHovered = false
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            playOverlay.animator().alphaValue = 0.0
-        }
-    }
-    
-    public override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if bounds.contains(point) {
-            onVideoClicked?()
-        }
     }
     
     private func updatePlayOverlayIcon() {
@@ -140,17 +461,58 @@ public final class YouTubeVideoPlayerView: NSView {
             return
         }
         
+        let startVal = max(0.0, startSeconds)
+        browserCurrentTime = startVal
+        panelCurrentTime = startVal
+        
         if currentVideoId == id {
-            currentTime = startSeconds
+            if isReady && !isAdActive {
+                syncWithBrowser(targetTime: startVal, isPaused: !shouldBePlaying)
+                if shouldBePlaying {
+                    play()
+                }
+            }
             return
         }
         
         currentVideoId = id
         isReady = false
-        currentTime = startSeconds
+        isPlaying = false
+        shouldBePlaying = true
+        isAdActive = false
+        duration = 0.0
+        
         loadingIndicator.startAnimation(nil)
+        thumbnailImageView.alphaValue = 1.0
+        webView.alphaValue = 0.0
+        skipAdButton.isHidden = true
+        skipAdButton.alphaValue = 0.0
         
         loadHighResThumbnail(id: id)
+        
+        // Fast SPA video switch if webView is already on YouTube watch page
+        let startInt = Int(startVal)
+        let spaJS = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.loadVideoById) {
+                p.loadVideoById({ videoId: '\(id)', startSeconds: \(startVal) });
+                p.mute();
+                p.playVideo();
+                return true;
+            }
+            return false;
+        })();
+        """
+        webView.evaluateJavaScript(spaJS) { [weak self] result, error in
+            guard let self = self else { return }
+            let didSPA = (result as? Bool) ?? false
+            if !didSPA {
+                if let targetURL = URL(string: "https://www.youtube.com/watch?v=\(id)&t=\(startInt)s") {
+                    self.webView.load(URLRequest(url: targetURL))
+                }
+            }
+        }
     }
     
     private func loadHighResThumbnail(id: String) {
@@ -163,17 +525,12 @@ public final class YouTubeVideoPlayerView: NSView {
                let data = data, let img = NSImage(data: data), img.size.width > 120 {
                 DispatchQueue.main.async {
                     self.thumbnailImageView.image = img
-                    self.loadingIndicator.stopAnimation(nil)
-                    self.isReady = true
                 }
             } else {
-                // Fallback to HQ thumbnail
                 URLSession.shared.dataTask(with: hqURL) { [weak self] data, _, _ in
                     guard let self = self, let data = data, let img = NSImage(data: data) else { return }
                     DispatchQueue.main.async {
                         self.thumbnailImageView.image = img
-                        self.loadingIndicator.stopAnimation(nil)
-                        self.isReady = true
                     }
                 }.resume()
             }
@@ -184,36 +541,89 @@ public final class YouTubeVideoPlayerView: NSView {
         currentVideoId = nil
         isReady = false
         isPlaying = false
-        currentTime = 0.0
+        isAdActive = false
+        browserCurrentTime = 0.0
+        panelCurrentTime = 0.0
         duration = 0.0
         thumbnailImageView.image = nil
+        thumbnailImageView.alphaValue = 1.0
+        webView.alphaValue = 0.0
+        skipAdButton.isHidden = true
+        skipAdButton.alphaValue = 0.0
         loadingIndicator.stopAnimation(nil)
+        webView.loadHTMLString("about:blank", baseURL: nil)
     }
     
     public func updateFromTelemetry(cur: Double, dur: Double, paused: Bool, vol: Int, muted: Bool) {
-        self.currentTime = cur
         if dur > 0 { self.duration = dur }
+        self.browserCurrentTime = cur
+        
         let nowPlaying = !paused
         if self.isPlaying != nowPlaying {
             self.isPlaying = nowPlaying
             updatePlayOverlayIcon()
             onPlaybackStateChanged?(nowPlaying)
         }
+        
+        // Synchronize live playback with browser position
+        if !isAdActive && cur >= 0 {
+            syncWithBrowser(targetTime: cur, isPaused: paused)
+        }
+        
         self.volume = vol
         self.isMuted = muted
-        onProgressUpdated?(cur, self.duration)
+        onProgressUpdated?(self.currentTime, self.duration)
         onVolumeChanged?(vol, muted)
     }
     
+    public func syncWithBrowser(targetTime: Double, isPaused: Bool) {
+        guard isReady, !isAdActive, targetTime >= 0 else { return }
+        let js = """
+        (function() {
+            if (typeof window._songTopSync === 'function') {
+                window._songTopSync(\(targetTime), \(isPaused));
+            } else {
+                var p = document.getElementById('movie_player');
+                var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+                if (v && Math.abs(v.currentTime - \(targetTime)) > 1.0) {
+                    v.currentTime = \(targetTime);
+                }
+            }
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+    
     public func play() {
+        shouldBePlaying = true
         isPlaying = true
         updatePlayOverlayIcon()
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.playVideo) { p.playVideo(); }
+            var v = document.querySelector('video');
+            if (v && v.paused) { v.play().catch(function(){}); }
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
         onPlaybackStateChanged?(true)
     }
     
     public func pause() {
+        shouldBePlaying = false
         isPlaying = false
         updatePlayOverlayIcon()
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.pauseVideo) { p.pauseVideo(); }
+            var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+            if (v && !v.paused) { v.pause(); }
+            if (v) { v.playbackRate = 1.0; }
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
         onPlaybackStateChanged?(false)
     }
     
@@ -226,8 +636,26 @@ public final class YouTubeVideoPlayerView: NSView {
     }
     
     public func seekTo(seconds: Double) {
-        currentTime = max(0, min(duration > 0 ? duration : 36000, seconds))
-        onProgressUpdated?(currentTime, duration)
+        browserCurrentTime = max(0, min(duration > 0 ? duration : 36000, seconds))
+        panelCurrentTime = browserCurrentTime
+        syncSeekTo(browserCurrentTime)
+        onProgressUpdated?(browserCurrentTime, duration)
+    }
+    
+    public func syncSeekTo(_ seconds: Double) {
+        panelCurrentTime = seconds
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.seekTo) { p.seekTo(\(seconds), true); }
+            var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+            if (v) {
+                v.currentTime = \(seconds);
+                v.playbackRate = 1.0;
+            }
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
     }
     
     public func skip(by seconds: Double) {
@@ -236,15 +664,168 @@ public final class YouTubeVideoPlayerView: NSView {
     
     public func setVolume(volume: Int) {
         self.volume = max(0, min(100, volume))
+        let fraction = Double(self.volume) / 100.0
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.setVolume) { p.setVolume(\(self.volume)); }
+            var v = document.querySelector('video');
+            if (v) { v.volume = \(fraction); }
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
         onVolumeChanged?(self.volume, isMuted)
     }
     
     public func setMuted(_ muted: Bool) {
         self.isMuted = muted
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p) {
+                if (\(muted) && p.mute) { p.mute(); }
+                else if (!\(muted) && p.unMute) { p.unMute(); }
+            }
+            var v = document.querySelector('video');
+            if (v) { v.muted = \(muted); }
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
         onVolumeChanged?(volume, isMuted)
     }
     
     public func toggleMute() {
         setMuted(!isMuted)
+    }
+    
+    @objc public func handleSkipAdClicked() {
+        skipAd()
+    }
+    
+    public func skipAd() {
+        let js = """
+        (function() {
+            var btns = document.querySelectorAll('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .videoAdUiSkipButton, .ytp-skip-ad-button, .ytp-ad-skip-button-container button');
+            btns.forEach(function(b) { try { b.click(); } catch(e){} });
+            
+            var p = document.getElementById('movie_player');
+            var v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+            if (p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting')) && v) {
+                if (isFinite(v.duration) && v.duration > 0) {
+                    v.currentTime = v.duration;
+                }
+            }
+            return 'OK';
+        })();
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+        
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            self.skipAdButton.animator().alphaValue = 0.0
+        }
+        
+        // Resync playback with browser tab position after 0.4s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self = self else { return }
+            if self.browserCurrentTime > 0 {
+                self.syncSeekTo(self.browserCurrentTime)
+            }
+        }
+    }
+    
+    // MARK: - YouTubeVideoPlayerDelegate
+    func handleBridgeMessage(_ body: Any) {
+        guard let message = body as? String else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            if message == "ready" {
+                self.isReady = true
+                self.loadingIndicator.stopAnimation(nil)
+                if self.browserCurrentTime > 0 && !self.isAdActive {
+                    self.syncWithBrowser(targetTime: self.browserCurrentTime, isPaused: !self.shouldBePlaying)
+                }
+                if self.shouldBePlaying {
+                    self.play()
+                } else {
+                    self.pause()
+                }
+            } else if message == "state_1" { // Live video playing!
+                self.isPlaying = true
+                self.isReady = true
+                self.loadingIndicator.stopAnimation(nil)
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.25
+                    self.thumbnailImageView.animator().alphaValue = 0.0
+                    self.webView.animator().alphaValue = 1.0
+                }
+                self.onPlaybackStateChanged?(true)
+                
+                // Immediately align video with current browser audio position
+                if self.browserCurrentTime > 0 && !self.isAdActive {
+                    self.syncWithBrowser(targetTime: self.browserCurrentTime, isPaused: false)
+                }
+            } else if message == "state_2" { // Paused
+                self.isPlaying = false
+                self.onPlaybackStateChanged?(false)
+            } else if message == "ad_detected" {
+                if !self.isAdActive {
+                    self.isAdActive = true
+                    self.clickOverlay.isAdActive = true
+                    self.skipAdButton.isHidden = false
+                    NSAnimationContext.runAnimationGroup { ctx in
+                        ctx.duration = 0.2
+                        self.skipAdButton.animator().alphaValue = 1.0
+                    }
+                }
+            } else if message == "ad_cleared" {
+                if self.isAdActive {
+                    self.isAdActive = false
+                    self.clickOverlay.isAdActive = false
+                    NSAnimationContext.runAnimationGroup({ ctx in
+                        ctx.duration = 0.2
+                        self.skipAdButton.animator().alphaValue = 0.0
+                    }, completionHandler: {
+                        if !self.isAdActive {
+                            self.skipAdButton.isHidden = true
+                        }
+                    })
+                    // Resync to browser time immediately when ad finishes
+                    if self.browserCurrentTime > 0 {
+                        self.syncSeekTo(self.browserCurrentTime)
+                    }
+                }
+            } else if message.hasPrefix("progress_") {
+                let parts = message.dropFirst("progress_".count).split(separator: "_")
+                if parts.count >= 2 {
+                    if let cur = Double(parts[0]), let dur = Double(parts[1]) {
+                        self.panelCurrentTime = cur
+                        if dur > 0 { self.duration = dur }
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - WKNavigationDelegate
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        let js = """
+        (function() {
+            var p = document.getElementById('movie_player');
+            if (p && p.mute) { p.mute(); }
+            var v = document.querySelector('video');
+            if (v) { v.muted = true; }
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+    
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        loadingIndicator.stopAnimation(nil)
+    }
+    
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        loadingIndicator.stopAnimation(nil)
     }
 }
