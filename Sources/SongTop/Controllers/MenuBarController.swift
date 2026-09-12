@@ -189,6 +189,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Trigger Drop Down Preview
+        let testItem = NSMenuItem(title: "Trigger Drop Down Preview", action: #selector(testDropDownClicked), keyEquivalent: "t")
+        testItem.target = self
+        testItem.image = NSImage(systemSymbolName: "arrow.down.to.line.compact", accessibilityDescription: nil)
+        menu.addItem(testItem)
+        
         // Refresh Now
         let refreshItem = NSMenuItem(title: "Check Now", action: #selector(checkNowClicked), keyEquivalent: "r")
         refreshItem.target = self
@@ -257,6 +263,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleShowTitle() {
         showTitleInMenuBar.toggle()
         buildMenu(track: detector.currentTrack)
+    }
+    
+    @objc private func testDropDownClicked() {
+        pillController.peek(duration: 5.0)
     }
     
     @objc private func checkNowClicked() {

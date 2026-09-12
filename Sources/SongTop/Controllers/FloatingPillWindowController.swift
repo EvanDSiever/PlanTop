@@ -1,84 +1,29 @@
 import AppKit
 
-final class HoverTriggerView: NSView {
-    var onHoverStateChanged: ((Bool) -> Void)?
-    private var trackingArea: NSTrackingArea?
-    
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-    
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        wantsLayer = true
-    }
-    
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let area = trackingArea {
-            removeTrackingArea(area)
-        }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        self.trackingArea = area
-    }
-    
-    override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        onHoverStateChanged?(true)
-    }
-    
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        onHoverStateChanged?(false)
-    }
-    
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        // Subtle top notch accent (tiny 40x3px pill) to show where hover zone is
-        let accentWidth: CGFloat = 48
-        let accentHeight: CGFloat = 3
-        let accentRect = NSRect(
-            x: (bounds.width - accentWidth) / 2,
-            y: bounds.height - accentHeight,
-            width: accentWidth,
-            height: accentHeight
-        )
-        let path = NSBezierPath(roundedRect: accentRect, xRadius: 1.5, yRadius: 1.5)
-        NSColor(white: 1.0, alpha: 0.18).setFill()
-        path.fill()
-    }
-}
-
 public final class FloatingPillWindowController: NSObject {
-    private var triggerPanel: NSPanel?
-    private var triggerView: HoverTriggerView?
-    
     private var pillPanel: NSPanel?
     private var pillView: FloatingPillView?
-    
     private var detector: YouTubeDetector
     
-    private var isInsideTrigger: Bool = false
-    private var isInsidePill: Bool = false
-    private var isDroppedDown: Bool = false
+    private var mousePollingTimer: Timer?
     private var retractTimer: Timer?
+    
+    private var isDroppedDown: Bool = false
+    private var isHoveringActive: Bool = false
     private var lastTrackId: String = ""
+    
+    // Generous scan dimensions
+    public var scanWidth: CGFloat = 750
+    public var scanHeight: CGFloat = 70
     
     public var isEnabled: Bool = true {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "isPillEnabled")
             if !isEnabled {
-                triggerPanel?.orderOut(nil)
                 retract(immediately: true)
+                stopMousePolling()
             } else {
-                setupTriggerPanel()
+                startMousePolling()
                 if !hoverDropOnly {
                     dropDown()
                 }
@@ -108,7 +53,7 @@ public final class FloatingPillWindowController: NSObject {
             self.hoverDropOnly = UserDefaults.standard.bool(forKey: "hoverDropOnly")
         }
         
-        setupTriggerPanel()
+        startMousePolling()
         
         NotificationCenter.default.addObserver(
             self,
@@ -120,49 +65,114 @@ public final class FloatingPillWindowController: NSObject {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        stopMousePolling()
         retractTimer?.invalidate()
     }
     
     @objc private func screenParametersChanged() {
-        repositionPanels()
+        if isDroppedDown {
+            repositionPanel()
+        }
     }
     
-    private func setupTriggerPanel() {
+    private func startMousePolling() {
+        stopMousePolling()
         guard isEnabled else { return }
-        guard let screen = NSScreen.main else { return }
         
-        let width: CGFloat = 380
-        let height: CGFloat = 32
+        // Poll global mouse cursor position 12 times a second (0.08s interval)
+        // Uses ~0.002% CPU and reliably bypasses all macOS transparency & TCC restrictions
+        mousePollingTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            self?.checkMousePosition()
+        }
+    }
+    
+    private func stopMousePolling() {
+        mousePollingTimer?.invalidate()
+        mousePollingTimer = nil
+    }
+    
+    private func checkMousePosition() {
+        guard isEnabled && hoverDropOnly else { return }
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main else { return }
+        
+        let mouse = NSEvent.mouseLocation
         let midX = screen.frame.midX
         let maxY = screen.frame.maxY
         
-        if triggerPanel == nil {
-            let panel = NSPanel(
-                contentRect: NSRect(x: midX - (width / 2), y: maxY - height, width: width, height: height),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            panel.level = .statusBar
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = false
-            panel.ignoresMouseEvents = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            
-            let tv = HoverTriggerView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-            tv.onHoverStateChanged = { [weak self] hovering in
-                self?.isInsideTrigger = hovering
-                self?.evaluateHoverState()
-            }
-            
-            panel.contentView = tv
-            self.triggerView = tv
-            self.triggerPanel = panel
+        // Generous top center scan area (750px wide, top 70px of screen)
+        let effectiveWidth = min(scanWidth, screen.frame.width * 0.75)
+        let triggerRect = NSRect(
+            x: midX - (effectiveWidth / 2),
+            y: maxY - scanHeight,
+            width: effectiveWidth,
+            height: scanHeight
+        )
+        
+        // Pill area when dropped down (includes extra 30px breathing room around edges)
+        let pillRect: NSRect
+        if let panel = pillPanel, isDroppedDown {
+            pillRect = panel.frame.insetBy(dx: -30, dy: -25)
+        } else {
+            pillRect = .zero
         }
         
-        triggerPanel?.setFrame(NSRect(x: midX - (width / 2), y: maxY - height, width: width, height: height), display: true)
-        triggerPanel?.orderFront(nil)
+        let inTrigger = NSPointInRect(mouse, triggerRect)
+        let inPill = NSPointInRect(mouse, pillRect)
+        let isInside = inTrigger || inPill
+        
+        if isInside {
+            retractTimer?.invalidate()
+            retractTimer = nil
+            isHoveringActive = true
+            
+            if !isDroppedDown {
+                dropDown()
+            }
+        } else {
+            if isHoveringActive || isDroppedDown {
+                isHoveringActive = false
+                if retractTimer == nil {
+                    // 0.5s grace period before sliding back up
+                    retractTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+                        self?.retract()
+                    }
+                }
+            }
+        }
+    }
+    
+    public func update(track: TrackInfo?) {
+        guard isEnabled else {
+            retract(immediately: true)
+            return
+        }
+        
+        let trackUrl = track?.url ?? ""
+        let isNewTrack = (!trackUrl.isEmpty && trackUrl != lastTrackId)
+        lastTrackId = trackUrl
+        
+        if isDroppedDown || !hoverDropOnly {
+            updateContent(track: track)
+        }
+        
+        if !hoverDropOnly {
+            dropDown()
+        } else if isNewTrack {
+            peek(duration: 5.0)
+        }
+    }
+    
+    public func peek(duration: TimeInterval = 5.0) {
+        guard isEnabled else { return }
+        dropDown()
+        
+        retractTimer?.invalidate()
+        retractTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            if !self.isHoveringActive {
+                self.retract()
+            }
+        }
     }
     
     private func setupPillPanel() -> (NSPanel, FloatingPillView) {
@@ -176,6 +186,7 @@ public final class FloatingPillWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
+        // High floating level so it displays smoothly above browser windows and menu bar
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) + 1)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -199,69 +210,12 @@ public final class FloatingPillWindowController: NSObject {
         pv.onDismiss = { [weak self] in
             self?.retract(immediately: false)
         }
-        pv.onHoverStateChanged = { [weak self] hovering in
-            self?.isInsidePill = hovering
-            self?.evaluateHoverState()
-        }
         
         panel.contentView = pv
         self.pillView = pv
         self.pillPanel = panel
         
         return (panel, pv)
-    }
-    
-    private func evaluateHoverState() {
-        guard isEnabled && hoverDropOnly else { return }
-        
-        let shouldBeOpen = isInsideTrigger || isInsidePill
-        if shouldBeOpen {
-            retractTimer?.invalidate()
-            retractTimer = nil
-            if !isDroppedDown {
-                dropDown()
-            }
-        } else {
-            if isDroppedDown && retractTimer == nil {
-                retractTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
-                    self?.retract()
-                }
-            }
-        }
-    }
-    
-    public func update(track: TrackInfo?) {
-        guard isEnabled else {
-            retract(immediately: true)
-            return
-        }
-        
-        let trackUrl = track?.url ?? ""
-        let isNewTrack = (trackUrl != lastTrackId)
-        lastTrackId = trackUrl
-        
-        if isDroppedDown || !hoverDropOnly {
-            updateContent(track: track)
-        }
-        
-        if !hoverDropOnly {
-            dropDown()
-        } else if isNewTrack && track != nil {
-            peek(duration: 4.5)
-        }
-    }
-    
-    public func peek(duration: TimeInterval = 4.5) {
-        guard isEnabled else { return }
-        dropDown()
-        
-        retractTimer?.invalidate()
-        retractTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            if !self.isInsideTrigger && !self.isInsidePill {
-                self.retract()
-            }
-        }
     }
     
     private func updateContent(track: TrackInfo?) {
@@ -333,20 +287,11 @@ public final class FloatingPillWindowController: NSObject {
         })
     }
     
-    private func repositionPanels() {
-        guard let screen = NSScreen.main else { return }
-        let width: CGFloat = 380
-        let height: CGFloat = 32
-        let midX = screen.frame.midX
-        let maxY = screen.frame.maxY
-        
-        triggerPanel?.setFrame(NSRect(x: midX - (width / 2), y: maxY - height, width: width, height: height), display: true)
-        
-        if let panel = pillPanel, let pv = pillView, isDroppedDown {
-            let fittingSize = pv.calculateFittingSize()
-            let targetX = screen.visibleFrame.midX - (fittingSize.width / 2)
-            let targetY = screen.visibleFrame.maxY - fittingSize.height - 6
-            panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
-        }
+    private func repositionPanel() {
+        guard let screen = NSScreen.main, let panel = pillPanel, let pv = pillView else { return }
+        let fittingSize = pv.calculateFittingSize()
+        let targetX = screen.visibleFrame.midX - (fittingSize.width / 2)
+        let targetY = screen.visibleFrame.maxY - fittingSize.height - 6
+        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }
 }
