@@ -570,14 +570,14 @@ public final class YouTubeDetector: ObservableObject {
         executeInTabJS(track: track, script: "'SONGTOP_OK'") { result in
             switch result {
             case .success:
-                completion(true, "🟢 Connected! Real-time in-tab seeking & background controls are active in \(track.browser).")
+                completion(true, "Connected! Real-time in-tab seeking & background controls are active in \(track.browser).")
             case .failure:
                 let browser = track.browser
                 let msg: String
                 if browser == "Safari" {
-                    msg = "⚠️ Safari blocked JavaScript events. To enable: in Safari top menu bar, click Develop > Allow JavaScript from Apple Events."
+                    msg = "Safari blocked JavaScript events. To enable: in Safari top menu bar, click Develop > Allow JavaScript from Apple Events."
                 } else {
-                    msg = "⚠️ \(browser) blocked JavaScript events. To enable: in \(browser) top menu bar, click View > Developer > Allow JavaScript from Apple Events."
+                    msg = "\(browser) blocked JavaScript events. To enable: in \(browser) top menu bar, click View > Developer > Allow JavaScript from Apple Events."
                 }
                 completion(false, msg)
             }

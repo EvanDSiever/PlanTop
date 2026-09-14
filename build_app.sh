@@ -5,7 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
 echo "🔨 Compiling SongTop..."
-swiftc -O -framework AppKit -framework QuartzCore -framework Combine -framework WebKit \
+swiftc -O -framework AppKit -framework QuartzCore -framework Combine -framework WebKit -framework EventKit -framework ServiceManagement \
     Sources/SongTop/Models/*.swift \
     Sources/SongTop/Services/*.swift \
     Sources/SongTop/Views/*.swift \
@@ -68,6 +68,10 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>SongTop detects currently playing YouTube tracks from your web browser tabs.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>SongTop accesses your calendar to display today's events in the calendar panel.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>SongTop accesses your Google Calendar events to show today's schedule in the floating panel.</string>
 </dict>
 </plist>
 EOF
@@ -75,5 +79,10 @@ EOF
 # Ad-hoc codesign
 codesign --force --deep -s - "$APP_DIR" 2>/dev/null || true
 
+echo "📦 Packaging SongTop.zip for distribution..."
+rm -f "$DIR/SongTop.zip"
+zip -r -y -q "$DIR/SongTop.zip" "$APP_NAME"
+
 echo "✅ Successfully built and signed $APP_NAME!"
 echo "📍 Location: $APP_DIR"
+echo "🎁 Release archive: $DIR/SongTop.zip"

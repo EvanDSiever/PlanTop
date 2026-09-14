@@ -25,9 +25,10 @@ final class ResizeHandleView: NSView {
 
 public final class FloatingPillView: NSView {
     private let clipContainer = NSView()
-    private let visualEffectView = NSVisualEffectView()
+    private let masterPanel = NeumorphicPanelContainerView()
+    private let mediaSectionContainer = NSView()
+    private let mediaSectionDivider = NSView()
     private let resizeHandle = ResizeHandleView()
-    private let gripBar = NSView()
     private let badgeContainer = NSView()
     private let equalizerView = EqualizerView(barColor: .white)
     
@@ -38,6 +39,11 @@ public final class FloatingPillView: NSView {
             update(with: currentTrack)
         }
     }
+    
+    // Calendar Panel with Neumorphic Switcher
+    private let panelStackContainer = NSView()
+    private let calendarPanel = CalendarPanelView(dayMode: .today)
+    private let calendarButton = NSButton()
     
     // Playhead Scrubber Controls
     private let scrubberSlider = NSSlider(value: 0, minValue: 0, maxValue: 100, target: nil, action: nil)
@@ -101,7 +107,7 @@ public final class FloatingPillView: NSView {
     public var availableTracks: [TrackInfo] = []
     public var isAutoTracking: Bool = true
     public var onSelectTrack: ((TrackInfo?) -> Void)?
-    private let pipBadge = NSTextField(labelWithString: " 📺 PiP Active ")
+    private let pipBadge = NSTextField(labelWithString: " PiP ACTIVE ")
     public var isNativePiPActive: Bool = false {
         didSet {
             guard oldValue != isNativePiPActive else { return }
@@ -168,23 +174,38 @@ public final class FloatingPillView: NSView {
         // Clip container masks the drawer sliding in from the right edge
         clipContainer.wantsLayer = true
         clipContainer.layer?.backgroundColor = NSColor.clear.cgColor
-        clipContainer.layer?.cornerRadius = 18
-        clipContainer.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-        clipContainer.layer?.masksToBounds = true
+        clipContainer.layer?.masksToBounds = false
         addSubview(clipContainer)
         
-        // Background Frosted Glass
-        visualEffectView.material = .hudWindow
-        visualEffectView.blendingMode = .behindWindow
-        visualEffectView.state = .active
-        visualEffectView.wantsLayer = true
-        visualEffectView.layer?.cornerRadius = 18
-        visualEffectView.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-        visualEffectView.layer?.masksToBounds = true
-        visualEffectView.layer?.borderWidth = 0.0
-        visualEffectView.layer?.borderColor = NSColor.clear.cgColor
-        visualEffectView.appearance = NSAppearance(named: .darkAqua)
-        clipContainer.addSubview(visualEffectView)
+        // Container holding all 3 distinct floating panels
+        panelStackContainer.wantsLayer = true
+        panelStackContainer.layer?.backgroundColor = NSColor.clear.cgColor
+        clipContainer.addSubview(panelStackContainer)
+        
+        // Single Master Neumorphic Ceramic Slab Container
+        masterPanel.cornerRadiusValue = 26
+        masterPanel.panelBackgroundColor = NeumorphicTheme.masterBackground
+        panelStackContainer.addSubview(masterPanel)
+        
+        // Media section container inside master panel
+        mediaSectionContainer.wantsLayer = true
+        mediaSectionContainer.layer?.backgroundColor = NSColor.clear.cgColor
+        masterPanel.contentView.addSubview(mediaSectionContainer)
+        
+        // Subtle divider separating media section from calendar sections
+        mediaSectionDivider.wantsLayer = true
+        mediaSectionDivider.layer?.backgroundColor = NeumorphicTheme.panelBorderOutline.cgColor
+        masterPanel.contentView.addSubview(mediaSectionDivider)
+        
+        // Integrated Calendar Section inside master panel
+        calendarPanel.onHeightChanged = { [weak self] in
+            self?.needsLayout = true
+            self?.onHeightChanged?()
+        }
+        calendarPanel.onOpenMeetURL = { url in
+            NSWorkspace.shared.open(url)
+        }
+        masterPanel.contentView.addSubview(calendarPanel)
         
         // Left Edge Drawer Accent Grip Bar & Interactive Resize Handle
         resizeHandle.wantsLayer = true
@@ -207,16 +228,13 @@ public final class FloatingPillView: NSView {
             self.isDraggingResize = false
             self.onResizeCompleted?()
         }
-        visualEffectView.addSubview(resizeHandle)
-        
-        gripBar.wantsLayer = true
-        gripBar.layer?.cornerRadius = 2
-        gripBar.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.45).cgColor
-        resizeHandle.addSubview(gripBar)
+        clipContainer.addSubview(resizeHandle)
         
         // Video Player View (16:9 Live Preview)
         videoPlayerView.wantsLayer = true
         videoPlayerView.layer?.cornerRadius = 12
+        videoPlayerView.layer?.borderColor = NeumorphicTheme.panelBorderOutline.cgColor
+        videoPlayerView.layer?.borderWidth = 0.75
         videoPlayerView.layer?.masksToBounds = true
         videoPlayerView.isHidden = true
         videoPlayerView.onVideoClicked = { [weak self] in
@@ -231,104 +249,108 @@ public final class FloatingPillView: NSView {
         videoPlayerView.onVolumeChanged = { [weak self] vol, isMuted in
             self?.updateVolumeUI(vol: vol, isMuted: isMuted)
         }
-        visualEffectView.addSubview(videoPlayerView)
+        mediaSectionContainer.addSubview(videoPlayerView)
         
-        // Scrubber / Timeline Bar
+        // Scrubber / Timeline Bar (Debossed styling with Coral fill)
         scrubberSlider.isContinuous = true
         scrubberSlider.target = self
         scrubberSlider.action = #selector(handleScrubberChanged)
-        visualEffectView.addSubview(scrubberSlider)
+        if #available(macOS 11.0, *) {
+            scrubberSlider.trackFillColor = NeumorphicTheme.coralAccent
+        }
+        mediaSectionContainer.addSubview(scrubberSlider)
         
         currentTimeLabel.isBezeled = false
         currentTimeLabel.drawsBackground = false
         currentTimeLabel.isEditable = false
         currentTimeLabel.isSelectable = false
-        currentTimeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-        currentTimeLabel.textColor = NSColor(white: 1.0, alpha: 0.8)
-        visualEffectView.addSubview(currentTimeLabel)
+        currentTimeLabel.font = NeumorphicTheme.monospacedRoundedFont(ofSize: 10, weight: .semibold)
+        currentTimeLabel.textColor = NeumorphicTheme.textSecondary
+        mediaSectionContainer.addSubview(currentTimeLabel)
         
         durationLabel.isBezeled = false
         durationLabel.drawsBackground = false
         durationLabel.isEditable = false
         durationLabel.isSelectable = false
-        durationLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-        durationLabel.textColor = NSColor(white: 1.0, alpha: 0.55)
+        durationLabel.font = NeumorphicTheme.monospacedRoundedFont(ofSize: 10, weight: .medium)
+        durationLabel.textColor = NeumorphicTheme.textTertiary
         durationLabel.alignment = .right
-        visualEffectView.addSubview(durationLabel)
+        mediaSectionContainer.addSubview(durationLabel)
         
         // Skip Buttons
         configureIconButton(skipBackButton, symbol: "gobackward.10", tooltip: "Skip Back 10 Seconds")
         skipBackButton.target = self
         skipBackButton.action = #selector(handleSkipBack)
-        visualEffectView.addSubview(skipBackButton)
+        mediaSectionContainer.addSubview(skipBackButton)
         
         configureIconButton(skipForwardButton, symbol: "goforward.10", tooltip: "Skip Forward 10 Seconds")
         skipForwardButton.target = self
         skipForwardButton.action = #selector(handleSkipForward)
-        visualEffectView.addSubview(skipForwardButton)
+        mediaSectionContainer.addSubview(skipForwardButton)
         
         // Volume Control
         configureIconButton(volumeButton, symbol: "speaker.wave.2.fill", tooltip: "Toggle Audio Mute")
         volumeButton.target = self
         volumeButton.action = #selector(handleVolumeButton)
-        visualEffectView.addSubview(volumeButton)
+        mediaSectionContainer.addSubview(volumeButton)
         
         volumeSlider.isContinuous = true
         volumeSlider.target = self
         volumeSlider.action = #selector(handleVolumeSliderChanged)
-        visualEffectView.addSubview(volumeSlider)
+        if #available(macOS 11.0, *) {
+            volumeSlider.trackFillColor = NeumorphicTheme.coralAccent
+        }
+        mediaSectionContainer.addSubview(volumeSlider)
         
-        // Red Icon Circle
+        // Reference Coral Red Icon Circle
         badgeContainer.wantsLayer = true
         badgeContainer.layer?.cornerRadius = 13
-        badgeContainer.layer?.backgroundColor = NSColor(red: 0.92, green: 0.1, blue: 0.14, alpha: 1.0).cgColor
-        badgeContainer.layer?.shadowColor = NSColor.red.cgColor
-        badgeContainer.layer?.shadowOpacity = 0.5
-        badgeContainer.layer?.shadowRadius = 8
-        badgeContainer.layer?.shadowOffset = CGSize(width: 0, height: -1)
-        visualEffectView.addSubview(badgeContainer)
+        badgeContainer.layer?.backgroundColor = NeumorphicTheme.coralAccent.cgColor
+        badgeContainer.layer?.borderWidth = 0.0
+        badgeContainer.layer?.shadowOpacity = 0.0
+        mediaSectionContainer.addSubview(badgeContainer)
         
         // Equalizer in Icon Circle
         equalizerView.frame = NSRect(x: 2, y: 5, width: 22, height: 16)
         badgeContainer.addSubview(equalizerView)
         equalizerView.startAnimating()
         
-        // Title Label
+        // Title Label in SF Pro Rounded Bold
         titleLabel.isBezeled = false
         titleLabel.drawsBackground = false
         titleLabel.isEditable = false
         titleLabel.isSelectable = false
-        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        titleLabel.textColor = .white
+        titleLabel.font = NeumorphicTheme.roundedFont(ofSize: 13, weight: .bold)
+        titleLabel.textColor = NeumorphicTheme.textPrimary
         titleLabel.lineBreakMode = .byTruncatingTail
-        visualEffectView.addSubview(titleLabel)
+        mediaSectionContainer.addSubview(titleLabel)
         
         // Browser Badge
         browserBadge.isBezeled = false
         browserBadge.drawsBackground = true
-        browserBadge.backgroundColor = NSColor(white: 1.0, alpha: 0.16)
+        browserBadge.backgroundColor = NeumorphicTheme.insetWell
         browserBadge.isEditable = false
         browserBadge.isSelectable = false
-        browserBadge.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-        browserBadge.textColor = NSColor(white: 1.0, alpha: 0.88)
+        browserBadge.font = NeumorphicTheme.roundedFont(ofSize: 9, weight: .bold)
+        browserBadge.textColor = NeumorphicTheme.textSecondary
         browserBadge.alignment = .center
         browserBadge.wantsLayer = true
         browserBadge.layer?.cornerRadius = 4
         browserBadge.layer?.masksToBounds = true
-        visualEffectView.addSubview(browserBadge)
+        mediaSectionContainer.addSubview(browserBadge)
         
         // Multi-Tab Selection Badge Button
         tabPickerButton.isBordered = false
         tabPickerButton.wantsLayer = true
         tabPickerButton.layer?.cornerRadius = 4
         tabPickerButton.layer?.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.28).cgColor
-        tabPickerButton.font = NSFont.systemFont(ofSize: 9.5, weight: .bold)
+        tabPickerButton.font = NeumorphicTheme.roundedFont(ofSize: 9.5, weight: .bold)
         tabPickerButton.contentTintColor = NSColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1.0)
         tabPickerButton.toolTip = "Switch Active YouTube Video"
         tabPickerButton.target = self
         tabPickerButton.action = #selector(handleTabPickerClicked)
         tabPickerButton.isHidden = true
-        visualEffectView.addSubview(tabPickerButton)
+        mediaSectionContainer.addSubview(tabPickerButton)
         
         // Native PiP Active Badge
         pipBadge.isBezeled = false
@@ -336,77 +358,84 @@ public final class FloatingPillView: NSView {
         pipBadge.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.28)
         pipBadge.isEditable = false
         pipBadge.isSelectable = false
-        pipBadge.font = NSFont.systemFont(ofSize: 9, weight: .bold)
+        pipBadge.font = NeumorphicTheme.roundedFont(ofSize: 9, weight: .bold)
         pipBadge.textColor = NSColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1.0)
         pipBadge.alignment = .center
         pipBadge.wantsLayer = true
         pipBadge.layer?.cornerRadius = 4
         pipBadge.layer?.masksToBounds = true
         pipBadge.isHidden = true
-        visualEffectView.addSubview(pipBadge)
+        mediaSectionContainer.addSubview(pipBadge)
         
-        // Artist / Channel Label
+        // Artist / Channel Label in SF Pro Rounded Medium
         artistLabel.isBezeled = false
         artistLabel.drawsBackground = false
         artistLabel.isEditable = false
         artistLabel.isSelectable = false
-        artistLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
-        artistLabel.textColor = NSColor(white: 1.0, alpha: 0.72)
+        artistLabel.font = NeumorphicTheme.roundedFont(ofSize: 11, weight: .medium)
+        artistLabel.textColor = NeumorphicTheme.textSecondary
         artistLabel.lineBreakMode = .byTruncatingTail
-        visualEffectView.addSubview(artistLabel)
+        mediaSectionContainer.addSubview(artistLabel)
         
         // Pin Button
         configureIconButton(pinButton, symbol: "pin", tooltip: "Pin Panel on Screen")
         pinButton.target = self
         pinButton.action = #selector(handlePinToggle)
-        visualEffectView.addSubview(pinButton)
+        mediaSectionContainer.addSubview(pinButton)
         updatePinButtonIcon()
         
         // Play / Pause Button
         configureIconButton(playPauseButton, symbol: "pause.fill", tooltip: "Play / Pause Video")
         playPauseButton.target = self
         playPauseButton.action = #selector(handlePlayPause)
-        visualEffectView.addSubview(playPauseButton)
+        mediaSectionContainer.addSubview(playPauseButton)
         
         // Open Tab Button
         configureIconButton(openButton, symbol: "arrow.up.forward.app", tooltip: "Bring YouTube Tab to Front")
         openButton.target = self
         openButton.action = #selector(handleOpen)
-        visualEffectView.addSubview(openButton)
+        mediaSectionContainer.addSubview(openButton)
         
         // Copy Title Button
         configureIconButton(copyButton, symbol: "doc.on.doc", tooltip: "Copy Song Title")
         copyButton.target = self
         copyButton.action = #selector(handleCopy)
-        visualEffectView.addSubview(copyButton)
+        mediaSectionContainer.addSubview(copyButton)
         
         // Close Button (Chevron Right indicates sliding back into right edge)
         configureIconButton(closeButton, symbol: "chevron.right", tooltip: "Retract Side Panel")
         closeButton.target = self
         closeButton.action = #selector(handleClose)
-        visualEffectView.addSubview(closeButton)
+        mediaSectionContainer.addSubview(closeButton)
         
         // Sync Calibration Arrow Button
         configureIconButton(syncCalibrationButton, symbol: "chevron.down", tooltip: "Audio / Video Lip-Sync Calibration")
         syncCalibrationButton.target = self
         syncCalibrationButton.action = #selector(handleToggleSyncCalibration)
-        visualEffectView.addSubview(syncCalibrationButton)
+        mediaSectionContainer.addSubview(syncCalibrationButton)
+        
+        // Google Calendar Toggle Button
+        configureIconButton(calendarButton, symbol: "calendar", tooltip: "Toggle Calendar Panels")
+        calendarButton.target = self
+        calendarButton.action = #selector(handleCalendarToggle)
+        mediaSectionContainer.addSubview(calendarButton)
+        updateCalendarButtonIcon()
         
         // In-Panel Lip-Sync Calibration Drawer
         syncDrawerContainer.wantsLayer = true
-        syncDrawerContainer.layer?.backgroundColor = NSColor(red: 0.10, green: 0.10, blue: 0.13, alpha: 0.90).cgColor
+        syncDrawerContainer.layer?.backgroundColor = NeumorphicTheme.insetWell.cgColor
         syncDrawerContainer.layer?.cornerRadius = 9
         syncDrawerContainer.layer?.borderWidth = 1.0
-        syncDrawerContainer.layer?.borderColor = NSColor(white: 1.0, alpha: 0.16).cgColor
+        syncDrawerContainer.layer?.borderColor = NeumorphicTheme.specularHighlightBorder.cgColor
         syncDrawerContainer.isHidden = true
-        visualEffectView.addSubview(syncDrawerContainer)
+        mediaSectionContainer.addSubview(syncDrawerContainer)
         
-        syncDrawerTitleLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
-        syncDrawerTitleLabel.textColor = .secondaryLabelColor
+        syncDrawerTitleLabel.font = NeumorphicTheme.roundedFont(ofSize: 10.5, weight: .bold)
+        syncDrawerTitleLabel.textColor = NeumorphicTheme.textSecondary
         syncDrawerContainer.addSubview(syncDrawerTitleLabel)
         
-        syncDrawerValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .bold)
-        syncDrawerValueLabel.textColor = .labelColor
+        syncDrawerValueLabel.font = NeumorphicTheme.monospacedRoundedFont(ofSize: 10.5, weight: .bold)
+        syncDrawerValueLabel.textColor = NeumorphicTheme.textPrimary
         syncDrawerContainer.addSubview(syncDrawerValueLabel)
         
         syncDrawerSlider.isContinuous = true
@@ -438,8 +467,9 @@ public final class FloatingPillView: NSView {
         
         menu.addItem(NSMenuItem.separator())
         
-        let autoItem = NSMenuItem(title: "⚡ Auto (Follow Active Tab)", action: #selector(handleSelectAutoTrack), keyEquivalent: "")
+        let autoItem = NSMenuItem(title: "Auto (Follow Active Tab)", action: #selector(handleSelectAutoTrack), keyEquivalent: "")
         autoItem.target = self
+        autoItem.image = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)
         autoItem.state = isAutoTracking ? .on : .off
         menu.addItem(autoItem)
         
@@ -562,14 +592,14 @@ public final class FloatingPillView: NSView {
         button.isBordered = false
         button.wantsLayer = true
         button.layer?.cornerRadius = 12
-        button.layer?.backgroundColor = NSColor(white: 1.0, alpha: 0.14).cgColor
+        NeumorphicTheme.applyButtonShadow(to: button.layer, cornerRadius: 12)
         button.toolTip = tooltip
         
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?.withSymbolConfiguration(config) {
             button.image = img
             button.imagePosition = .imageOnly
-            button.contentTintColor = .white
+            button.contentTintColor = NeumorphicTheme.buttonIconTint
         }
     }
     
@@ -582,11 +612,35 @@ public final class FloatingPillView: NSView {
         if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)?.withSymbolConfiguration(config) {
             pinButton.image = img
             pinButton.imagePosition = .imageOnly
-            pinButton.contentTintColor = isPinned ? NSColor(red: 0.1, green: 0.85, blue: 1.0, alpha: 1.0) : .white
+            pinButton.contentTintColor = isPinned ? NeumorphicTheme.buttonActiveTint : NeumorphicTheme.buttonIconTint
         }
         pinButton.layer?.backgroundColor = isPinned
-            ? NSColor(red: 0.1, green: 0.85, blue: 1.0, alpha: 0.28).cgColor
-            : NSColor(white: 1.0, alpha: 0.14).cgColor
+            ? NeumorphicTheme.buttonActiveBackground.cgColor
+            : NeumorphicTheme.buttonBackground.cgColor
+    }
+    
+    private func updateCalendarButtonIcon() {
+        let isCalActive = GoogleCalendarService.shared.isCalendarEnabled
+        let tooltip = isCalActive ? "Hide Calendar Panels" : "Show Calendar Panels (Today & Tomorrow)"
+        calendarButton.toolTip = tooltip
+        
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        if let img = NSImage(systemSymbolName: "calendar", accessibilityDescription: tooltip)?.withSymbolConfiguration(config) {
+            calendarButton.image = img
+            calendarButton.imagePosition = .imageOnly
+            calendarButton.contentTintColor = isCalActive ? NeumorphicTheme.buttonActiveTint : NeumorphicTheme.buttonIconTint
+        }
+        calendarButton.layer?.backgroundColor = isCalActive
+            ? NeumorphicTheme.buttonActiveBackground.cgColor
+            : NeumorphicTheme.buttonBackground.cgColor
+    }
+    
+    @objc private func handleCalendarToggle() {
+        GoogleCalendarService.shared.isCalendarEnabled.toggle()
+        updateCalendarButtonIcon()
+        calendarPanel.reloadFromService()
+        needsLayout = true
+        onHeightChanged?()
     }
     
     public func update(with track: TrackInfo?, initialSeconds: Double? = nil) {
@@ -649,6 +703,7 @@ public final class FloatingPillView: NSView {
         }
         
         needsLayout = true
+        onHeightChanged?()
     }
     
     public override func layout() {
@@ -656,16 +711,69 @@ public final class FloatingPillView: NSView {
         clipContainer.frame = bounds
         
         if isStretchedOut {
-            visualEffectView.frame = bounds
+            panelStackContainer.frame = bounds
         } else {
-            visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+            panelStackContainer.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
         }
+        
+        let w = bounds.width
+        let h = bounds.height
+        let hPad: CGFloat = 8
+        let vPad: CGFloat = 8
+        let panelW = max(200, w - (hPad * 2))
+        let panelH = max(56, h - (vPad * 2))
+        
+        masterPanel.frame = NSRect(x: hPad, y: vPad, width: panelW, height: panelH)
+        
+        let cardW = masterPanel.contentView.bounds.width
+        let cardH = masterPanel.contentView.bounds.height
+        let isCalEnabled = GoogleCalendarService.shared.isCalendarEnabled
         
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
         let isCompanion = isNativePiPActive
-        let gripHeight: CGFloat = (hasVideo || isCompanion) ? 50 : 28
-        resizeHandle.frame = NSRect(x: 0, y: 0, width: 18, height: bounds.height)
-        gripBar.frame = NSRect(x: 5, y: (bounds.height - gripHeight) / 2, width: 3.5, height: gripHeight)
+        let drawerExtraHeight: CGFloat = isSyncCalibrationExpanded ? 54 : 0
+        
+        let mediaW = cardW
+        let mediaH: CGFloat
+        
+        if isCalEnabled {
+            calendarPanel.isHidden = false
+            mediaSectionDivider.isHidden = false
+            
+            if isCompanion {
+                mediaH = 114 + drawerExtraHeight
+            } else if hasVideo {
+                let padLeft: CGFloat = 18
+                let padRight: CGFloat = 14
+                let videoW = cardW - padLeft - padRight
+                let videoH = videoW * 9.0 / 16.0
+                let bottomBarHeight: CGFloat = 104
+                let topPadding: CGFloat = 14
+                mediaH = topPadding + videoH + bottomBarHeight + drawerExtraHeight
+            } else {
+                mediaH = 56
+            }
+            
+            let calH = calendarPanel.calculateFittingHeight(forWidth: cardW)
+            
+            // Top-down layout inside AppKit coordinates (where y = cardH is top)
+            let mediaY = cardH - mediaH - 8
+            mediaSectionContainer.frame = NSRect(x: 0, y: mediaY, width: cardW, height: mediaH)
+            
+            let dividerY = mediaY - 6
+            mediaSectionDivider.frame = NSRect(x: 16, y: dividerY, width: max(20, cardW - 32), height: 0.75)
+            
+            let calY = dividerY - 6 - calH
+            calendarPanel.frame = NSRect(x: 0, y: calY, width: cardW, height: calH)
+        } else {
+            calendarPanel.isHidden = true
+            mediaSectionDivider.isHidden = true
+            
+            mediaH = cardH
+            mediaSectionContainer.frame = NSRect(x: 0, y: 0, width: cardW, height: cardH)
+        }
+        
+        resizeHandle.frame = NSRect(x: 0, y: 0, width: hPad + 14, height: bounds.height)
         window?.invalidateCursorRects(for: resizeHandle)
         
         if isCompanion {
@@ -683,8 +791,8 @@ public final class FloatingPillView: NSView {
             let padLeft: CGFloat = 18
             let padRight: CGFloat = 14
             
-            // Row 1 (Top: Metadata & PiP badge): y = bounds.height - 34
-            let row1Y = bounds.height - 34
+            // Row 1 (Top: Metadata & PiP badge): y = mediaH - 34
+            let row1Y = mediaH - 34
             let iconSize: CGFloat = 26
             badgeContainer.frame = NSRect(x: padLeft, y: row1Y - 2, width: iconSize, height: iconSize)
             badgeContainer.layer?.cornerRadius = 13
@@ -692,7 +800,7 @@ public final class FloatingPillView: NSView {
             
             pipBadge.sizeToFit()
             let badgeW = pipBadge.frame.width + 6
-            pipBadge.frame = NSRect(x: bounds.width - padRight - badgeW, y: row1Y + 3, width: badgeW, height: 14)
+            pipBadge.frame = NSRect(x: mediaW - padRight - badgeW, y: row1Y + 3, width: badgeW, height: 14)
             
             let textLeft = badgeContainer.frame.maxX + 8
             let textWidth = max(50, pipBadge.frame.minX - textLeft - 6)
@@ -708,7 +816,7 @@ public final class FloatingPillView: NSView {
             // Row 2 (Middle: Scrubber): y = row1Y - 32
             let scrubberY = row1Y - 32
             currentTimeLabel.frame = NSRect(x: padLeft, y: scrubberY, width: 34, height: 14)
-            durationLabel.frame = NSRect(x: bounds.width - padRight - 34, y: scrubberY, width: 34, height: 14)
+            durationLabel.frame = NSRect(x: mediaW - padRight - 34, y: scrubberY, width: 34, height: 14)
             let sliderX = currentTimeLabel.frame.maxX + 4
             let sliderW = durationLabel.frame.minX - 4 - sliderX
             scrubberSlider.frame = NSRect(x: sliderX, y: scrubberY - 2, width: max(40, sliderW), height: 16)
@@ -723,19 +831,21 @@ public final class FloatingPillView: NSView {
             skipForwardButton.frame = NSRect(x: playPauseButton.frame.maxX + spacing, y: transY, width: btnSize, height: btnSize)
             
             volumeButton.frame = NSRect(x: skipForwardButton.frame.maxX + 8, y: transY, width: btnSize, height: btnSize)
-            let maxVolWidth: CGFloat = min(54, max(22, bounds.width - 275))
+            let maxVolWidth: CGFloat = min(54, max(22, mediaW - 275))
             volumeSlider.frame = NSRect(x: volumeButton.frame.maxX + 4, y: transY + 2, width: maxVolWidth, height: 18)
             
-            closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
+            closeButton.frame = NSRect(x: mediaW - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
             openButton.frame = NSRect(x: closeButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             copyButton.frame = NSRect(x: openButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             pinButton.frame = NSRect(x: copyButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            calendarButton.isHidden = false
+            calendarButton.frame = NSRect(x: pinButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             syncCalibrationButton.isHidden = false
-            syncCalibrationButton.frame = NSRect(x: pinButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            syncCalibrationButton.frame = NSRect(x: calendarButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             
-            layoutSyncDrawer(padLeft: padLeft, padRight: padRight)
+            layoutSyncDrawer(padLeft: padLeft, padRight: padRight, bottomOffset: 0)
         } else if hasVideo {
-            // Full 16:9 Video Preview + Controls Layout (Height: 14 + videoH + 104 + drawerExtraHeight)
+            // Full 16:9 Video Preview + Controls Layout
             pipBadge.isHidden = true
             videoPlayerView.isHidden = false
             scrubberSlider.isHidden = false
@@ -748,15 +858,15 @@ public final class FloatingPillView: NSView {
             
             let padLeft: CGFloat = 18
             let padRight: CGFloat = 14
-            let videoW = bounds.width - padLeft - padRight
+            let videoW = mediaW - padLeft - padRight
             let videoH = videoW * 9.0 / 16.0
-            let videoY = bounds.height - 14 - videoH
+            let videoY = mediaH - 14 - videoH
             videoPlayerView.frame = NSRect(x: padLeft, y: videoY, width: videoW, height: videoH)
             
             // 1. Scrubber Row (Timeline): y = videoY - 22
             let scrubberY = videoY - 22
             currentTimeLabel.frame = NSRect(x: padLeft, y: scrubberY, width: 34, height: 14)
-            durationLabel.frame = NSRect(x: bounds.width - padRight - 34, y: scrubberY, width: 34, height: 14)
+            durationLabel.frame = NSRect(x: mediaW - padRight - 34, y: scrubberY, width: 34, height: 14)
             let sliderX = currentTimeLabel.frame.maxX + 4
             let sliderW = durationLabel.frame.minX - 4 - sliderX
             scrubberSlider.frame = NSRect(x: sliderX, y: scrubberY - 2, width: max(40, sliderW), height: 16)
@@ -771,18 +881,20 @@ public final class FloatingPillView: NSView {
             skipForwardButton.frame = NSRect(x: playPauseButton.frame.maxX + spacing, y: transY, width: btnSize, height: btnSize)
             
             volumeButton.frame = NSRect(x: skipForwardButton.frame.maxX + 8, y: transY, width: btnSize, height: btnSize)
-            let maxVolWidth: CGFloat = min(54, max(22, bounds.width - 275))
+            let maxVolWidth: CGFloat = min(54, max(22, mediaW - 275))
             volumeSlider.frame = NSRect(x: volumeButton.frame.maxX + 4, y: transY + 2, width: maxVolWidth, height: 18)
             
             // Right edge action buttons on transport row
-            closeButton.frame = NSRect(x: bounds.width - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
+            closeButton.frame = NSRect(x: mediaW - padRight - btnSize, y: transY, width: btnSize, height: btnSize)
             openButton.frame = NSRect(x: closeButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             copyButton.frame = NSRect(x: openButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             pinButton.frame = NSRect(x: copyButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            calendarButton.isHidden = false
+            calendarButton.frame = NSRect(x: pinButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             syncCalibrationButton.isHidden = false
-            syncCalibrationButton.frame = NSRect(x: pinButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
+            syncCalibrationButton.frame = NSRect(x: calendarButton.frame.minX - spacing - btnSize, y: transY, width: btnSize, height: btnSize)
             
-            // 3. Metadata row: bottom area (y: 6 + bottomOffset to transY - 4)
+            // 3. Metadata row
             let bottomOffset: CGFloat = isSyncCalibrationExpanded ? 54 : 0
             let metaY: CGFloat = 8 + bottomOffset
             let iconSize: CGFloat = 26
@@ -791,7 +903,7 @@ public final class FloatingPillView: NSView {
             equalizerView.frame = NSRect(x: 2, y: 5, width: 22, height: 16)
             
             let textLeft = badgeContainer.frame.maxX + 8
-            let textWidth = max(50, bounds.width - textLeft - padRight)
+            let textWidth = max(50, mediaW - textLeft - padRight)
             titleLabel.frame = NSRect(x: textLeft, y: metaY + 12, width: textWidth, height: 16)
             let artistWidth = min(textWidth - 55, 120)
             artistLabel.frame = NSRect(x: textLeft, y: metaY - 1, width: max(30, artistWidth), height: 14)
@@ -801,7 +913,7 @@ public final class FloatingPillView: NSView {
                 tabPickerButton.frame = NSRect(x: browserBadge.frame.maxX + 4, y: metaY - 1, width: pickerW, height: 15)
             }
             
-            layoutSyncDrawer(padLeft: padLeft, padRight: padRight)
+            layoutSyncDrawer(padLeft: padLeft, padRight: padRight, bottomOffset: 0)
         } else {
             // Compact Audio Mode Layout (Height: 56)
             syncCalibrationButton.isHidden = true
@@ -820,55 +932,59 @@ public final class FloatingPillView: NSView {
             let paddingRight: CGFloat = 12
             let iconSize: CGFloat = 36
             
-            badgeContainer.frame = NSRect(x: paddingLeft, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
+            badgeContainer.frame = NSRect(x: paddingLeft, y: (mediaH - iconSize) / 2, width: iconSize, height: iconSize)
             badgeContainer.layer?.cornerRadius = 18
             equalizerView.frame = NSRect(x: 7, y: 10, width: 22, height: 16)
             
             let btnSpacing: CGFloat = 6
             let btnSize: CGFloat = 26
             
-            closeButton.frame = NSRect(x: bounds.width - paddingRight - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
-            openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
-            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
-            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
-            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - btnSize, y: (bounds.height - btnSize) / 2, width: btnSize, height: btnSize)
+            closeButton.frame = NSRect(x: mediaW - paddingRight - btnSize, y: (mediaH - btnSize) / 2, width: btnSize, height: btnSize)
+            openButton.frame = NSRect(x: closeButton.frame.minX - btnSpacing - btnSize, y: (mediaH - btnSize) / 2, width: btnSize, height: btnSize)
+            copyButton.frame = NSRect(x: openButton.frame.minX - btnSpacing - btnSize, y: (mediaH - btnSize) / 2, width: btnSize, height: btnSize)
+            playPauseButton.frame = NSRect(x: copyButton.frame.minX - btnSpacing - btnSize, y: (mediaH - btnSize) / 2, width: btnSize, height: btnSize)
+            pinButton.frame = NSRect(x: playPauseButton.frame.minX - btnSpacing - btnSize, y: (mediaH - btnSize) / 2, width: btnSize, height: btnSize)
+            calendarButton.isHidden = false
+            calendarButton.frame = NSRect(x: pinButton.frame.minX - btnSpacing - btnSize, y: (mediaH - btnSize) / 2, width: btnSize, height: btnSize)
             
             let textLeft = badgeContainer.frame.maxX + 10
-            let textRight = pinButton.frame.minX - 10
+            let textRight = calendarButton.frame.minX - 10
             let availableWidth = max(80, textRight - textLeft)
+            let textCenterY = mediaH / 2
             
             if browserBadge.isHidden {
-                titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: min(availableWidth, 320), height: 18)
+                titleLabel.frame = NSRect(x: textLeft, y: textCenterY + 1, width: min(availableWidth, 320), height: 18)
             } else {
                 let badgeWidth = browserBadge.frame.width + 4
                 let titleWidth = min(availableWidth - badgeWidth - 6, 280)
-                titleLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) + 1, width: titleWidth, height: 18)
-                browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (bounds.height / 2) + 2, width: badgeWidth, height: 16)
+                titleLabel.frame = NSRect(x: textLeft, y: textCenterY + 1, width: titleWidth, height: 18)
+                browserBadge.frame = NSRect(x: titleLabel.frame.maxX + 6, y: textCenterY + 2, width: badgeWidth, height: 16)
                 if !tabPickerButton.isHidden {
                     let pickerW = max(68, tabPickerButton.frame.width)
-                    tabPickerButton.frame = NSRect(x: browserBadge.frame.maxX + 6, y: (bounds.height / 2) + 2, width: pickerW, height: 16)
+                    tabPickerButton.frame = NSRect(x: browserBadge.frame.maxX + 6, y: textCenterY + 2, width: pickerW, height: 16)
                 }
             }
             
-            artistLabel.frame = NSRect(x: textLeft, y: (bounds.height / 2) - 18, width: availableWidth, height: 16)
+            artistLabel.frame = NSRect(x: textLeft, y: textCenterY - 18, width: availableWidth, height: 16)
         }
     }
     
     public func stretchOut(animated: Bool = true) {
         isStretchedOut = true
         if !animated {
-            visualEffectView.frame = bounds
+            panelStackContainer.frame = bounds
             videoPlayerView.play()
             if videoPlayerView.browserCurrentTime > 0 {
                 videoPlayerView.syncWithBrowser(targetTime: videoPlayerView.browserCurrentTime, isPaused: false)
             }
             return
         }
-        visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+        panelStackContainer.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.28
+            context.duration = 0.32
+            // Rapid slide on activation then smooth deceleration (pure ease-out effect)
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
-            visualEffectView.animator().frame = bounds
+            panelStackContainer.animator().frame = bounds
         }, completionHandler: { [weak self] in
             guard let self = self else { return }
             self.videoPlayerView.play()
@@ -882,14 +998,14 @@ public final class FloatingPillView: NSView {
         isStretchedOut = false
         videoPlayerView.pause()
         if !animated {
-            visualEffectView.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+            panelStackContainer.frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
             completion?()
             return
         }
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.22
+            context.duration = 0.28
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            visualEffectView.animator().frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
+            panelStackContainer.animator().frame = NSRect(x: bounds.width, y: 0, width: bounds.width, height: bounds.height)
         }, completionHandler: completion)
     }
     
@@ -913,33 +1029,42 @@ public final class FloatingPillView: NSView {
     
     public func calculateFittingSize() -> NSSize {
         let width = max(260, min(650, preferredPanelWidth))
+        let hPad: CGFloat = 8
+        let vPad: CGFloat = 8
+        let panelW = max(200, width - (hPad * 2))
         let hasVideo = isVideoPreviewEnabled && (currentTrack?.isVideo ?? false)
         let drawerExtraHeight: CGFloat = isSyncCalibrationExpanded ? 54 : 0
         
+        let videoPanelHeight: CGFloat
         if isNativePiPActive {
-            return NSSize(width: width, height: 114 + drawerExtraHeight)
-        }
-        if hasVideo {
+            videoPanelHeight = 114 + drawerExtraHeight
+        } else if hasVideo {
             let padLeft: CGFloat = 18
             let padRight: CGFloat = 14
-            let videoW = width - padLeft - padRight
+            let videoW = panelW - padLeft - padRight
             let videoH = videoW * 9.0 / 16.0
             let bottomBarHeight: CGFloat = 104
             let topPadding: CGFloat = 14
-            let height = topPadding + videoH + bottomBarHeight + drawerExtraHeight
-            return NSSize(width: width, height: height)
+            videoPanelHeight = topPadding + videoH + bottomBarHeight + drawerExtraHeight
+        } else {
+            videoPanelHeight = 56
         }
         
-        let titleFont = titleLabel.font ?? NSFont.systemFont(ofSize: 13)
-        let artistFont = artistLabel.font ?? NSFont.systemFont(ofSize: 11)
-        
-        let titleWidth = (titleLabel.stringValue as NSString).size(withAttributes: [.font: titleFont]).width
-        let artistWidth = (artistLabel.stringValue as NSString).size(withAttributes: [.font: artistFont]).width
-        let maxTextWidth = min(max(titleWidth + (browserBadge.isHidden ? 0 : 70), artistWidth), 330)
-        
-        let buttonsCount: CGFloat = 5
-        let totalWidth = 16 + 36 + 10 + maxTextWidth + 12 + (buttonsCount * 26) + ((buttonsCount - 1) * 6) + 12
-        return NSSize(width: max(width, max(380, totalWidth)), height: 56)
+        let isCalEnabled = GoogleCalendarService.shared.isCalendarEnabled
+        if isCalEnabled {
+            let calHeight = calendarPanel.calculateFittingHeight(forWidth: panelW)
+            let totalHeight = videoPanelHeight + calHeight + 28 + (vPad * 2)
+            return NSSize(width: width, height: totalHeight)
+        } else {
+            let titleFont = titleLabel.font ?? NeumorphicTheme.roundedFont(ofSize: 13, weight: .bold)
+            let artistFont = artistLabel.font ?? NeumorphicTheme.roundedFont(ofSize: 11, weight: .medium)
+            let titleWidth = (titleLabel.stringValue as NSString).size(withAttributes: [.font: titleFont]).width
+            let artistWidth = (artistLabel.stringValue as NSString).size(withAttributes: [.font: artistFont]).width
+            let maxTextWidth = min(max(titleWidth + (browserBadge.isHidden ? 0 : 70), artistWidth), 330)
+            let buttonsCount: CGFloat = 6
+            let totalWidth = 16 + 36 + 10 + maxTextWidth + 12 + (buttonsCount * 26) + ((buttonsCount - 1) * 6) + 12 + (hPad * 2)
+            return NSSize(width: max(width, max(380, totalWidth)), height: videoPanelHeight + (vPad * 2))
+        }
     }
     
     @objc private func handleScrubberChanged() {
@@ -1019,7 +1144,7 @@ public final class FloatingPillView: NSView {
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         if let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
             volumeButton.image = img
-            volumeButton.contentTintColor = isMuted ? NSColor(white: 0.6, alpha: 1.0) : .white
+            volumeButton.contentTintColor = isMuted ? NeumorphicTheme.textTertiary : NeumorphicTheme.buttonIconTint
         }
     }
     
@@ -1063,7 +1188,7 @@ public final class FloatingPillView: NSView {
         if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)?.withSymbolConfiguration(config) {
             playPauseButton.image = img
             playPauseButton.imagePosition = .imageOnly
-            playPauseButton.contentTintColor = .white
+            playPauseButton.contentTintColor = NeumorphicTheme.buttonIconTint
         }
         if isPlaying {
             equalizerView.startAnimating()
@@ -1089,7 +1214,7 @@ public final class FloatingPillView: NSView {
             guard let self = self else { return }
             if let docImg = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)?.withSymbolConfiguration(originalConfig) {
                 self.copyButton.image = docImg
-                self.copyButton.contentTintColor = .white
+                self.copyButton.contentTintColor = NeumorphicTheme.buttonIconTint
             }
         }
     }
@@ -1098,11 +1223,11 @@ public final class FloatingPillView: NSView {
         onDismiss?()
     }
     
-    private func layoutSyncDrawer(padLeft: CGFloat, padRight: CGFloat) {
+    private func layoutSyncDrawer(padLeft: CGFloat, padRight: CGFloat, bottomOffset: CGFloat = 0) {
         if isSyncCalibrationExpanded {
             syncDrawerContainer.isHidden = false
-            let drawerW = bounds.width - padLeft - padRight
-            syncDrawerContainer.frame = NSRect(x: padLeft, y: 8, width: drawerW, height: 48)
+            let drawerW = mediaSectionContainer.bounds.width - padLeft - padRight
+            syncDrawerContainer.frame = NSRect(x: padLeft, y: bottomOffset + 8, width: drawerW, height: 48)
             
             let row1Y: CGFloat = 26
             syncDrawerTitleLabel.frame = NSRect(x: 8, y: row1Y, width: 52, height: 16)
@@ -1125,9 +1250,10 @@ public final class FloatingPillView: NSView {
         button.bezelStyle = .inline
         button.isBordered = false
         button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor(white: 0.22, alpha: 0.85).cgColor
+        button.layer?.backgroundColor = NeumorphicTheme.buttonBackground.cgColor
         button.layer?.cornerRadius = 4
-        button.font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
+        button.font = NeumorphicTheme.monospacedRoundedFont(ofSize: 9.5, weight: .bold)
+        button.contentTintColor = NeumorphicTheme.buttonIconTint
         button.target = self
         button.action = action
     }
@@ -1141,7 +1267,7 @@ public final class FloatingPillView: NSView {
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "Lip-Sync Calibration")?.withSymbolConfiguration(config) {
             syncCalibrationButton.image = img
-            syncCalibrationButton.contentTintColor = isSyncCalibrationExpanded ? .systemBlue : .white
+            syncCalibrationButton.contentTintColor = isSyncCalibrationExpanded ? NeumorphicTheme.buttonActiveTint : NeumorphicTheme.buttonIconTint
         }
     }
     
@@ -1192,5 +1318,8 @@ public final class FloatingPillView: NSView {
         if videoPlayerView.browserCurrentTime > 0 {
             videoPlayerView.syncWithBrowser(targetTime: videoPlayerView.browserCurrentTime, isPaused: !videoPlayerView.isPlaying)
         }
+        updateCalendarButtonIcon()
+        calendarPanel.reloadFromService()
+        needsLayout = true
     }
 }

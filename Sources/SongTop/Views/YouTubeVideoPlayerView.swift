@@ -409,7 +409,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
             guard let self = self else { return }
             self.isHovered = isHovered
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.15
+                ctx.duration = 0.35
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 self.playOverlay.animator().alphaValue = isHovered ? 0.85 : 0.0
             }
         }
@@ -421,8 +422,13 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
         updatePlayOverlayIcon()
         addSubview(playOverlay)
         
-        // 5. Interactive Native Skip Ad Button
-        skipAdButton.title = "⏭️ Skip Ad"
+        // 5. Interactive Native Skip Ad Button (Typographic Cue & SF Symbol, Zero Emojis)
+        skipAdButton.title = "SKIP AD "
+        let symConfig = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold)
+        if let sym = NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: "Skip")?.withSymbolConfiguration(symConfig) {
+            skipAdButton.image = sym
+            skipAdButton.imagePosition = .imageTrailing
+        }
         skipAdButton.isBordered = false
         skipAdButton.wantsLayer = true
         skipAdButton.layer?.cornerRadius = 8
@@ -433,7 +439,7 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
         skipAdButton.layer?.shadowOpacity = 0.6
         skipAdButton.layer?.shadowRadius = 6
         skipAdButton.layer?.shadowOffset = CGSize(width: 0, height: -2)
-        skipAdButton.font = NSFont.systemFont(ofSize: 11, weight: .bold)
+        skipAdButton.font = NeumorphicTheme.roundedFont(ofSize: 10.5, weight: .bold)
         skipAdButton.contentTintColor = .white
         skipAdButton.target = self
         skipAdButton.action = #selector(handleSkipAdClicked)
@@ -758,7 +764,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
         webView?.evaluateJavaScript(js, completionHandler: nil)
         
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
+            ctx.duration = 0.35
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.skipAdButton.animator().alphaValue = 0.0
         }
         
@@ -793,7 +800,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                 self.isReady = true
                 self.loadingIndicator.stopAnimation(nil)
                 NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.25
+                    ctx.duration = 0.35
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                     self.thumbnailImageView.animator().alphaValue = 0.0
                     self.webView.animator().alphaValue = 1.0
                 }
@@ -812,7 +820,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     self.clickOverlay.isAdActive = true
                     self.skipAdButton.isHidden = false
                     NSAnimationContext.runAnimationGroup { ctx in
-                        ctx.duration = 0.2
+                        ctx.duration = 0.35
+                        ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                         self.skipAdButton.animator().alphaValue = 1.0
                     }
                 }
@@ -821,7 +830,8 @@ public final class YouTubeVideoPlayerView: NSView, YouTubeVideoPlayerDelegate, W
                     self.isAdActive = false
                     self.clickOverlay.isAdActive = false
                     NSAnimationContext.runAnimationGroup({ ctx in
-                        ctx.duration = 0.2
+                        ctx.duration = 0.35
+                        ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                         self.skipAdButton.animator().alphaValue = 0.0
                     }, completionHandler: {
                         if !self.isAdActive {

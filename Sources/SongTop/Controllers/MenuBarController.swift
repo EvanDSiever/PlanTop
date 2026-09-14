@@ -40,6 +40,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             name: .songTopAvailableTracksChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onCalendarUpdated),
+            name: .songTopCalendarUpdated,
+            object: nil
+        )
     }
     
     deinit {
@@ -241,7 +247,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         if detector.availableTracks.count > 1 {
             let tabsSubmenu = NSMenu()
             
-            let autoItem = NSMenuItem(title: "⚡ Auto (Follow Active Tab)", action: #selector(menuBarSelectAutoTrack), keyEquivalent: "")
+            let autoItem = NSMenuItem(title: "Auto (Follow Active Tab)", action: #selector(menuBarSelectAutoTrack), keyEquivalent: "")
+            autoItem.image = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)
             autoItem.target = self
             autoItem.state = detector.isAutoTracking ? .on : .off
             tabsSubmenu.addItem(autoItem)
@@ -265,6 +272,62 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             tabsItem.image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: nil)
             tabsItem.submenu = tabsSubmenu
             menu.addItem(tabsItem)
+        }
+        
+        // Google Calendar Section
+        if GoogleCalendarService.shared.isCalendarEnabled {
+            let todayEvents = GoogleCalendarService.shared.todaysEvents
+            let tomorrowEvents = GoogleCalendarService.shared.tomorrowsEvents
+            let calSubmenu = NSMenu(title: "Schedule")
+            
+            // Today Header
+            let todayHeader = NSMenuItem(title: "── Today (\(todayEvents.count)) ──", action: nil, keyEquivalent: "")
+            todayHeader.isEnabled = false
+            calSubmenu.addItem(todayHeader)
+            
+            if todayEvents.isEmpty {
+                let emptyItem = NSMenuItem(title: "No events today", action: nil, keyEquivalent: "")
+                emptyItem.isEnabled = false
+                calSubmenu.addItem(emptyItem)
+            } else {
+                for event in todayEvents.prefix(5) {
+                    let timeTag = event.isHappeningNow ? "[NOW] " : "[\(event.formattedTime)] "
+                    let item = NSMenuItem(title: "\(timeTag)\(event.title)", action: #selector(openCalendarAppClicked), keyEquivalent: "")
+                    item.target = self
+                    calSubmenu.addItem(item)
+                }
+            }
+            
+            calSubmenu.addItem(NSMenuItem.separator())
+            
+            // Tomorrow Header
+            let tomorrowHeader = NSMenuItem(title: "── Tomorrow (\(tomorrowEvents.count)) ──", action: nil, keyEquivalent: "")
+            tomorrowHeader.isEnabled = false
+            calSubmenu.addItem(tomorrowHeader)
+            
+            if tomorrowEvents.isEmpty {
+                let emptyItem = NSMenuItem(title: "No events tomorrow", action: nil, keyEquivalent: "")
+                emptyItem.isEnabled = false
+                calSubmenu.addItem(emptyItem)
+            } else {
+                for event in tomorrowEvents.prefix(5) {
+                    let timeTag = "[\(event.formattedTime)] "
+                    let item = NSMenuItem(title: "\(timeTag)\(event.title)", action: #selector(openCalendarAppClicked), keyEquivalent: "")
+                    item.target = self
+                    calSubmenu.addItem(item)
+                }
+            }
+            
+            calSubmenu.addItem(NSMenuItem.separator())
+            let openCalItem = NSMenuItem(title: "Open Calendar App", action: #selector(openCalendarAppClicked), keyEquivalent: "")
+            openCalItem.target = self
+            calSubmenu.addItem(openCalItem)
+            
+            let totalCount = todayEvents.count + tomorrowEvents.count
+            let calMenuItem = NSMenuItem(title: "Google Calendar (\(totalCount) events)", action: nil, keyEquivalent: "")
+            calMenuItem.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)
+            calMenuItem.submenu = calSubmenu
+            menu.addItem(calMenuItem)
         }
         
         menu.addItem(NSMenuItem.separator())
@@ -437,6 +500,17 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let track = detector.availableTracks[sender.tag]
         detector.selectTrack(track)
         buildMenu(track: track)
+    }
+    
+    @objc private func onCalendarUpdated() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.buildMenu(track: self.detector.currentTrack)
+        }
+    }
+    
+    @objc private func openCalendarAppClicked() {
+        GoogleCalendarService.shared.openCalendarApp()
     }
     
     @objc private func quitClicked() {

@@ -1,85 +1,116 @@
+# SongTop
+
 <p align="center">
-  <img src="Assets/app_icon.jpg" width="140" height="140" alt="SongTop App Icon" style="border-radius: 28px;" />
+  <img src="Assets/app_icon.jpg" width="128" height="128" alt="SongTop App Icon" style="border-radius: 26px; box-shadow: 0 10px 25px rgba(0,0,0,0.15);" />
 </p>
 
-<h1 align="center">SongTop</h1>
+<h3 align="center">A Native, Stealth macOS Side-Panel Companion for YouTube Now Playing & Google Calendar</h3>
 
 <p align="center">
-  <b>A lightweight, native macOS software that displays the song or video you're currently listening to on YouTube (or YouTube Music) right at the top of your screen.</b>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-macOS%2013%2B-black?style=flat-square&logo=apple" alt="macOS 13+" />
+  <img src="https://img.shields.io/badge/Platform-macOS%2013%2B-000000?style=flat-square&logo=apple" alt="macOS 13+" />
   <img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20%2F%20Universal-blue?style=flat-square" alt="Apple Silicon" />
   <img src="https://img.shields.io/badge/Language-Swift%206-orange?style=flat-square&logo=swift" alt="Swift 6" />
   <img src="https://img.shields.io/badge/UI-Native%20AppKit-red?style=flat-square" alt="Native AppKit" />
+  <img src="https://img.shields.io/badge/Appearance-White%20%26%20Orange-orange?style=flat-square" alt="White and Orange" />
 </p>
 
 ---
 
-## ✨ Features
+## What is SongTop?
 
-- **Interactive Top-Screen Hover Dropdown**: Tucks discreetly into your top screen bezel / MacBook notch. Whenever you move your mouse to the center top of the screen (or when a new track begins), a sleek frosted-glass banner smoothly slides down to reveal the song, artist, live frequency waveforms, and quick action buttons!
-- **Zero Configuration**: Works instantly out of the box with your running browsers:
+**SongTop** is a lightweight, stealth macOS background utility built in pure Swift and AppKit. It integrates directly into macOS without cluttering your Dock, providing:
+
+1. **Right-Edge Hover Side Panel**: Move your cursor to the right edge of your screen to smoothly slide out your media companion and daily calendar.
+2. **YouTube Now Playing & PiP**: Automatically detects YouTube and YouTube Music playback from any running browser (Google Chrome, Safari, Brave, Arc, Microsoft Edge, Opera, Vivaldi), featuring live video playback and audio-video lip-sync calibration.
+3. **Google Calendar Activity Hub**: View your schedule organized cleanly across **Classes**, **Today**, and **Tomorrow** tabs.
+4. **Custom Class Detectors**: Define custom keywords (e.g. `Class IEL, Alfatih`) to automatically categorize lectures, labs, and academic events.
+5. **Futuristic Typography & White-Orange Theme**: Signature vibrant orange accents with large futuristic time badges (Alien League, Futura) and clean borderless white ceramic card surfaces.
+
+---
+
+## Quick Start & Download
+
+### Option 1: Download Prebuilt Release
+1. Download **[SongTop.zip](SongTop.zip)**.
+2. Unzip the file to reveal `SongTop.app`.
+3. Drag `SongTop.app` into your `/Applications` folder.
+4. **First Launch**:
+   - Double-click `SongTop.app` in `/Applications` (or search for **SongTop** in Spotlight).
+   - If prompted by macOS Gatekeeper, right-click (or Control-click) `SongTop.app` and choose **Open**, then click **Open**.
+   - Alternatively, remove the quarantine attribute via Terminal:
+     ```bash
+     xattr -cr /Applications/SongTop.app
+     ```
+
+### Option 2: Build from Source
+```bash
+git clone https://github.com/EvanDSiever/SongTop.git
+cd SongTop
+./build_app.sh
+```
+This generates the compiled `.app` bundle at `./SongTop.app` and distribution package at `./SongTop.zip`.
+
+---
+
+## How to Use SongTop
+
+### 1. Seamless Background Integration (No Dock Icon)
+SongTop runs as a native macOS **Accessory (`LSUIElement`)**. It never takes up space in your macOS Dock, keeping your workspace clean and distraction-free.
+
+### 2. Accessing SongTop
+- **Menu Bar**: Look for the equalizer icon in the top right menu bar. Click it to view current track info, change modes, or click **SongTop Settings & Customization...**.
+- **Spotlight Search**: Press `Cmd + Space`, type `SongTop`, and press `Enter` to open the Settings window at any time.
+
+### 3. Right-Edge Hover Panel
+- Move your mouse cursor towards the right edge of your display.
+- The companion panel smoothly slides out with a high-velocity ease-out deceleration curve.
+- Hover away to let it retract automatically, or click the pin button to keep it fixed.
+
+### 4. YouTube Audio & Video Detection
+- Play any video or song on YouTube / YouTube Music in your browser.
+- Supported browsers:
   - **Google Chrome**
   - **Safari**
   - **Brave Browser**
   - **Arc Browser**
   - **Microsoft Edge**
-  - **Opera** & **Vivaldi**
-- **Cleans YouTube Titles**: Automatically strips YouTube notification badges (e.g. `(1)`, `(99+)`), play indicators (`▶`), and browser suffixes (`- YouTube`, `- YouTube Music`).
-- **macOS Menu Bar Display**: Sits quietly in your macOS top menu bar with an animated equalizer icon and live track name.
-- **Interactive Controls**:
-  - **Focus Tab**: Click to bring the playing YouTube browser tab directly to the front.
-  - **Copy Title**: Copy the formatted song name to your clipboard with one click.
-  - **Play / Pause**: Toggle playback right from the menu.
-  - **Next Track**: Skip to the next video or track in the playlist.
-- **Ultra Lightweight & Fast**: Native Swift & AppKit Mach-O binary (<200KB binary, <0.2% CPU). Runs with `LSUIElement` to keep your Dock clean.
+- *Tip for direct in-tab media controls*: Enable Apple Events JavaScript in your browser (e.g., in Chrome: `View > Developer > Allow JavaScript from Apple Events`).
+
+### 5. Google Calendar & Custom Class Detectors
+- In **Settings & Customization**, link your Google Calendar account or grant Calendar access.
+- In the **Class Detectors** field, enter keywords separated by commas (e.g., `Class IEL, Alfatih, Lecture`).
+- Any calendar event with matching keywords automatically routes to your dedicated **Classes** tab.
+- Click any event card in the panel to expand its details (date, time span, location, notes, and direct Google Calendar/Meet link).
+
+### 6. Appearance & Color Customization
+- Open Settings to customize:
+  - **Accent Colors**: Orange (`#FF700D`), Coral, Blue, Green, Purple, or pick custom colors using the native color picker.
+  - **Time Font**: Choose between Alien League Condensed, Alien League Regular, Futura Condensed Light, SF Pro Rounded, and Monospaced.
+  - **App Typography**: Toggle between SF Pro Rounded, System Default, Monospaced, and Serif.
+
+### 7. Run at Startup (Launch at Login)
+- Open SongTop Settings.
+- Under **System & Menu Bar Integration**, check **Launch SongTop automatically at login**.
+- SongTop will start silently in the background on every Mac boot without popping up any windows.
 
 ---
 
-## 🚀 How to Run
+## Keyboard & Window Shortcuts
 
-### Prebuilt Application
-Download or open the compiled bundle:
-```bash
-open SongTop.app
-```
-
-Or move it to your `/Applications` directory:
-```bash
-cp -R SongTop.app /Applications/
-```
+| Action | Shortcut / Method |
+| :--- | :--- |
+| **Open Settings** | Search "SongTop" in Spotlight or click Menu Bar icon |
+| **Toggle Full Screen** | `Control + Command + F` (or click green traffic light) |
+| **Peek Side Panel** | Click "Test Side Panel" in Settings |
+| **Quit App** | Menu Bar icon > Quit SongTop |
 
 ---
 
-## 🛠️ Building from Source
-
-### Prerequisites
-- macOS 13.0 or later
-- Swift 5.9+ / Swift 6 (Command Line Tools or Xcode)
-
-### One-Click Build
-Run the automated build script:
-```bash
-./build_app.sh
-```
-This compiles the native binary, builds the `.app` bundle structure with icons and `Info.plist`, and codesigns the app locally.
+## Requirements
+- **macOS**: 13.0 (Ventura) or later (macOS Sonoma & Sequoia fully supported).
+- **Architecture**: Apple Silicon (M1/M2/M3/M4) & Intel Universal.
 
 ---
 
-## ⚙️ Customization
-
-Click on the SongTop icon in the macOS menu bar at any time to:
-- Choose your preferred display mode:
-  - **Drop Down on Top Hover** (Default: tucked at top edge, drops down when hovering or when a song changes)
-  - **Always Keep Top Banner Visible** (stays pinned on screen)
-  - **Hide Top Banner (Menu Bar Only)**
-- Toggle showing the **Song Name in Menu Bar**.
-- Manually refresh with **Check Now**.
-- Quit SongTop.
-
----
-
-## 📄 License
-MIT License. Feel free to use, modify, and contribute!
+## License
+MIT License. Created by Evan Siever.

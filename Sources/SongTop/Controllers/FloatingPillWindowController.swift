@@ -296,6 +296,18 @@ public final class FloatingPillWindowController: NSObject {
             name: .songTopAvailableTracksChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onCalendarUpdated),
+            name: .songTopCalendarUpdated,
+            object: nil
+        )
+        
+        if isPinned || !hoverDropOnly {
+            DispatchQueue.main.async { [weak self] in
+                self?.dropDown()
+            }
+        }
     }
     
     deinit {
@@ -333,6 +345,15 @@ public final class FloatingPillWindowController: NSObject {
                 selectedTrack: self.detector.currentTrack,
                 isAuto: self.detector.isAutoTracking
             )
+        }
+    }
+    
+    @objc private func onCalendarUpdated() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.isDroppedDown {
+                self.handlePanelHeightChanged()
+            }
         }
     }
     
@@ -577,7 +598,7 @@ public final class FloatingPillWindowController: NSObject {
             let view = NSView(frame: NSRect(origin: .zero, size: targetRect.size))
             view.wantsLayer = true
             view.layer?.cornerRadius = 14
-            view.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+            view.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMinYCorner, .layerMaxXMaxYCorner]
             
             let lbl = NSTextField(labelWithString: "")
             lbl.font = NSFont.systemFont(ofSize: 11, weight: .bold)
@@ -624,12 +645,12 @@ public final class FloatingPillWindowController: NSObject {
             view.layer?.backgroundColor = NSColor(red: 0.15, green: 0.8, blue: 0.4, alpha: 0.35).cgColor
             view.layer?.borderWidth = 2.0
             view.layer?.borderColor = NSColor(red: 0.2, green: 0.95, blue: 0.45, alpha: 0.95).cgColor
-            label.stringValue = targetRect.width > 70 ? "🎯 Active Hover Zone!\n(\(Int(scanReach))px reach)" : "🎯 Active"
+            label.stringValue = targetRect.width > 70 ? "Active Hover Zone!\n(\(Int(scanReach))px reach)" : "Active"
         } else {
             view.layer?.backgroundColor = NSColor(red: 0.1, green: 0.55, blue: 1.0, alpha: 0.22).cgColor
             view.layer?.borderWidth = 1.5
             view.layer?.borderColor = NSColor(red: 0.2, green: 0.65, blue: 1.0, alpha: 0.85).cgColor
-            label.stringValue = targetRect.width > 70 ? "🎯 Right Edge Zone\n(\(Int(scanReach))px reach)" : "🎯 Zone"
+            label.stringValue = targetRect.width > 70 ? "Right Edge Zone\n(\(Int(scanReach))px reach)" : "Ready"
         }
     }
     
@@ -825,8 +846,9 @@ public final class FloatingPillWindowController: NSObject {
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         
-        // Anchored flush to the right edge of the display
-        let targetX = screenFrame.maxX - fittingSize.width
+        // Floated slightly off the right display bezel to display full rounded corners & shadows
+        let rightMargin: CGFloat = 16
+        let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         
         let wasDropped = isDroppedDown
@@ -880,7 +902,8 @@ public final class FloatingPillWindowController: NSObject {
         let fittingSize = pv.calculateFittingSize()
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let targetX = screenFrame.maxX - fittingSize.width
+        let rightMargin: CGFloat = 16
+        let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
@@ -901,17 +924,18 @@ public final class FloatingPillWindowController: NSObject {
         let fittingSize = pv.calculateFittingSize()
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let targetX = screenFrame.maxX - fittingSize.width
+        let rightMargin: CGFloat = 16
+        let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
         
         cachedPillRect = targetFrame.insetBy(dx: -40, dy: -30)
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.20
+            ctx.duration = 0.30
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(targetFrame, display: true)
+            panel.animator().setFrame(targetFrame, display: false)
+            pv.animator().frame = NSRect(origin: .zero, size: fittingSize)
         }
-        pv.frame = NSRect(origin: .zero, size: fittingSize)
         pv.needsLayout = true
     }
     
@@ -921,7 +945,8 @@ public final class FloatingPillWindowController: NSObject {
         let fittingSize = pv.calculateFittingSize()
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let targetX = screenFrame.maxX - fittingSize.width
+        let rightMargin: CGFloat = 16
+        let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
         cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
         panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
