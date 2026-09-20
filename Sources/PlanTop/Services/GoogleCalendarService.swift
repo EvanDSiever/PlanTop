@@ -274,11 +274,14 @@ public final class GoogleCalendarService: ObservableObject {
             let ekTomorrow = self.eventStore.events(matching: tomorrowPred)
             let mappedTomorrow = self.mapEvents(ekTomorrow)
             
-            // Separate Classes & Alfatih events from general agenda
-            let todayClasses = mappedToday.filter { $0.isClassOrAlfatih }
-            let tomorrowClasses = mappedTomorrow.filter { $0.isClassOrAlfatih }
-            let classesList = !todayClasses.isEmpty ? todayClasses : tomorrowClasses
+            // 3. Query Classes (30-day window from startOfToday)
+            let endOfClassesWindow = calendar.date(byAdding: .day, value: 30, to: startOfToday) ?? endOfTomorrow
+            let classesPred = self.eventStore.predicateForEvents(withStart: startOfToday, end: endOfClassesWindow, calendars: calendarsToQuery)
+            let ekClasses = self.eventStore.events(matching: classesPred)
+            let mappedClasses = self.mapEvents(ekClasses)
             
+            // Separate Classes & Alfatih events from general agenda
+            let classesList = mappedClasses.filter { $0.isClassOrAlfatih && !$0.isPast }.sorted { $0.startDate < $1.startDate }
             let todayFiltered = mappedToday.filter { !$0.isClassOrAlfatih }
             let tomorrowFiltered = mappedTomorrow.filter { !$0.isClassOrAlfatih }
             
@@ -319,14 +322,23 @@ public final class GoogleCalendarService: ObservableObject {
     
     // Direct iCal (.ics) feed parser fallback
     public func fetchFromICal() {
-        guard let url = URL(string: customICalURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            self.syncStatus = .error("Invalid iCal URL")
+        fetchICS(urlString: customICalURL.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    
+    public func fetchICS(urlString: String) {
+        guard let url = URL(string: urlString) else {
+            DispatchQueue.main.async {
+                self.syncStatus = .error("Invalid iCal URL format")
+            }
             return
+        }
+        
+        DispatchQueue.main.async {
+            self.syncStatus = .syncing
         }
         
         let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self else { return }
-            
             if let error = error {
                 DispatchQueue.main.async {
                     self.syncStatus = .error(error.localizedDescription)
@@ -341,12 +353,7 @@ public final class GoogleCalendarService: ObservableObject {
                 return
             }
             
-            let (todayEvents, tomorrowEvents) = self.parseICS(icsString)
-            let todayClasses = todayEvents.filter { $0.isClassOrAlfatih }
-            let tomorrowClasses = tomorrowEvents.filter { $0.isClassOrAlfatih }
-            let classesList = !todayClasses.isEmpty ? todayClasses : tomorrowClasses
-            let todayFiltered = todayEvents.filter { !$0.isClassOrAlfatih }
-            let tomorrowFiltered = tomorrowEvents.filter { !$0.isClassOrAlfatih }
+            let (todayFiltered, tomorrowFiltered, classesList) = self.parseICS(icsString)
             
             DispatchQueue.main.async {
                 self.classesEvents = classesList
@@ -360,13 +367,14 @@ public final class GoogleCalendarService: ObservableObject {
         task.resume()
     }
     
-    private func parseICS(_ ics: String) -> ([CalendarEvent], [CalendarEvent]) {
+    private func parseICS(_ ics: String) -> ([CalendarEvent], [CalendarEvent], [CalendarEvent]) {
         var today: [CalendarEvent] = []
         var tomorrow: [CalendarEvent] = []
+        var classes: [CalendarEvent] = []
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         guard let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday),
-              let endOfTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday) else { return ([], []) }
+              let endOfTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday) else { return ([], [], []) }
         
         let lines = ics.components(separatedBy: .newlines)
         var inEvent = false
@@ -405,10 +413,18 @@ public final class GoogleCalendarService: ObservableObject {
                         sourceAccount: targetEmail
                     )
                     
+                    if event.isClassOrAlfatih && event.endDate >= startOfToday {
+                        classes.append(event)
+                    }
+                    
                     if (start >= startOfToday && start < startOfTomorrow) || (end > startOfToday && end <= startOfTomorrow) {
-                        today.append(event)
+                        if !event.isClassOrAlfatih {
+                            today.append(event)
+                        }
                     } else if (start >= startOfTomorrow && start < endOfTomorrow) || (end > startOfTomorrow && end <= endOfTomorrow) {
-                        tomorrow.append(event)
+                        if !event.isClassOrAlfatih {
+                            tomorrow.append(event)
+                        }
                     }
                 }
             } else if inEvent {
@@ -431,7 +447,11 @@ public final class GoogleCalendarService: ObservableObject {
             }
         }
         
-        return (today.sorted { $0.startDate < $1.startDate }, tomorrow.sorted { $0.startDate < $1.startDate })
+        return (
+            today.sorted { $0.startDate < $1.startDate },
+            tomorrow.sorted { $0.startDate < $1.startDate },
+            classes.sorted { $0.startDate < $1.startDate }
+        )
     }
     
     private func parseICSDate(_ line: String) -> (Date?, Bool) {

@@ -177,14 +177,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         self.headerIconView = iconView
         
         let appTitle = NSTextField(labelWithString: "PlanTop Daily Planner")
-        appTitle.font = NSFont.systemFont(ofSize: 19, weight: .bold)
+        appTitle.font = NeumorphicTheme.avenirFont(ofSize: 19, weight: .bold)
         appTitle.textColor = .labelColor
         appTitle.frame = NSRect(x: 78, y: currentY + 2, width: 380, height: 24)
         container.addSubview(appTitle)
         self.headerTitleLabel = appTitle
         
         let appSubtitle = NSTextField(labelWithString: "Stealth macOS Side-Panel Companion & Calendar Activity Hub")
-        appSubtitle.font = NSFont.systemFont(ofSize: 11.5, weight: .regular)
+        appSubtitle.font = NeumorphicTheme.avenirFont(ofSize: 11.5, weight: .regular)
         appSubtitle.textColor = .secondaryLabelColor
         appSubtitle.frame = NSRect(x: 78, y: currentY + 26, width: 420, height: 16)
         container.addSubview(appSubtitle)
@@ -199,7 +199,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sectionCards.append(calCard)
         
         let calTitle = NSTextField(labelWithString: "Daily Planner & Google Calendar Integration")
-        calTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        calTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
         calTitle.textColor = NeumorphicTheme.accentColor
         calTitle.frame = NSRect(x: 14, y: calCardH - 30, width: 400, height: 16)
         calCard.addSubview(calTitle)
@@ -211,7 +211,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // Class Detectors
         let classLabel = NSTextField(labelWithString: "Class Detectors (Keywords separated by commas):")
-        classLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        classLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         classLabel.textColor = NeumorphicTheme.textPrimary
         classLabel.frame = NSRect(x: 14, y: calCardH - 90, width: 420, height: 16)
         calCard.addSubview(classLabel)
@@ -224,7 +224,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // iCal subscription URL
         let iCalLabel = NSTextField(labelWithString: "Custom Google Calendar iCal URL (Secret Address in iCal format):")
-        iCalLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        iCalLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         iCalLabel.textColor = NeumorphicTheme.textPrimary
         iCalLabel.frame = NSRect(x: 14, y: calCardH - 148, width: 450, height: 16)
         calCard.addSubview(iCalLabel)
@@ -236,7 +236,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         calCard.addSubview(calendarICalField)
         
         // Sync status and actions
-        calendarStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        calendarStatusLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .regular)
         calendarStatusLabel.textColor = .secondaryLabelColor
         calendarStatusLabel.frame = NSRect(x: 14, y: 18, width: 230, height: 26)
         calCard.addSubview(calendarStatusLabel)
@@ -262,7 +262,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sectionCards.append(panelCard)
         
         let panelTitle = NSTextField(labelWithString: "Right-Edge Slide Panel & Display Mode")
-        panelTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        panelTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
         panelTitle.textColor = NeumorphicTheme.accentColor
         panelTitle.frame = NSRect(x: 14, y: panelCardH - 30, width: 400, height: 16)
         panelCard.addSubview(panelTitle)
@@ -274,7 +274,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // Reach slider
         let reachLabel = NSTextField(labelWithString: "Hover Scan Reach (px from right bezel):")
-        reachLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        reachLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         reachLabel.textColor = NeumorphicTheme.textPrimary
         reachLabel.frame = NSRect(x: 14, y: panelCardH - 96, width: 280, height: 16)
         panelCard.addSubview(reachLabel)
@@ -284,14 +284,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         widthSlider.action = #selector(widthSliderChanged(_:))
         panelCard.addSubview(widthSlider)
         
-        widthValueLabel.font = NSFont.systemFont(ofSize: 11, weight: .bold)
+        widthValueLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .bold)
         widthValueLabel.alignment = .right
         widthValueLabel.frame = NSRect(x: 400, y: panelCardH - 120, width: 64, height: 20)
         panelCard.addSubview(widthValueLabel)
         
         // Panel Width slider
         let pWidthLabel = NSTextField(labelWithString: "Slide Panel Width (260px - 650px):")
-        pWidthLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        pWidthLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         pWidthLabel.textColor = NeumorphicTheme.textPrimary
         pWidthLabel.frame = NSRect(x: 14, y: panelCardH - 150, width: 280, height: 16)
         panelCard.addSubview(pWidthLabel)
@@ -301,7 +301,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         panelWidthSlider.action = #selector(panelWidthSliderChanged(_:))
         panelCard.addSubview(panelWidthSlider)
         
-        panelWidthValueLabel.font = NSFont.systemFont(ofSize: 11, weight: .bold)
+        panelWidthValueLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .bold)
         panelWidthValueLabel.alignment = .right
         panelWidthValueLabel.frame = NSRect(x: 400, y: panelCardH - 174, width: 64, height: 20)
         panelCard.addSubview(panelWidthValueLabel)
@@ -327,14 +327,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sectionCards.append(appearanceCard)
         
         let appearanceTitle = NSTextField(labelWithString: "Appearance, Color Scheme & Typography")
-        appearanceTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        appearanceTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
         appearanceTitle.textColor = NeumorphicTheme.accentColor
         appearanceTitle.frame = NSRect(x: 14, y: appCardH - 30, width: 350, height: 16)
         appearanceCard.addSubview(appearanceTitle)
         
         // Color row
         let colorLabel = NSTextField(labelWithString: "Accent Color:")
-        colorLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        colorLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         colorLabel.textColor = NeumorphicTheme.textPrimary
         colorLabel.frame = NSRect(x: 14, y: appCardH - 60, width: 90, height: 16)
         appearanceCard.addSubview(colorLabel)
@@ -351,7 +351,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             btn.title = title
             btn.tag = tag
             btn.bezelStyle = .rounded
-            btn.font = NSFont.systemFont(ofSize: 10.5, weight: .medium)
+            btn.font = NeumorphicTheme.avenirFont(ofSize: 10.5, weight: .medium)
             btn.target = self
             btn.action = #selector(colorPresetClicked(_:))
             btn.frame = NSRect(x: pX, y: appCardH - 64, width: 52, height: 24)
@@ -366,7 +366,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // Time Font row
         let timeLabel = NSTextField(labelWithString: "Time Font:")
-        timeLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        timeLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         timeLabel.textColor = NeumorphicTheme.textPrimary
         timeLabel.frame = NSRect(x: 14, y: appCardH - 102, width: 90, height: 16)
         appearanceCard.addSubview(timeLabel)
@@ -387,7 +387,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // App Font row
         let appFontLabel = NSTextField(labelWithString: "App Font:")
-        appFontLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        appFontLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
         appFontLabel.textColor = NeumorphicTheme.textPrimary
         appFontLabel.frame = NSRect(x: 14, y: appCardH - 144, width: 90, height: 16)
         appearanceCard.addSubview(appFontLabel)
@@ -395,7 +395,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         appFontPopup.frame = NSRect(x: 105, y: appCardH - 148, width: 230, height: 24)
         appFontPopup.removeAllItems()
         appFontPopup.addItems(withTitles: [
-            "SF Pro Rounded (Default)",
+            "Avenir (Default)",
+            "SF Pro Rounded",
             "System Default",
             "Monospaced",
             "Serif"
@@ -413,7 +414,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sectionCards.append(sysCard)
         
         let sysTitle = NSTextField(labelWithString: "System & Menu Bar Integration")
-        sysTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        sysTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
         sysTitle.textColor = NeumorphicTheme.accentColor
         sysTitle.frame = NSRect(x: 14, y: sysCardH - 30, width: 350, height: 16)
         sysCard.addSubview(sysTitle)

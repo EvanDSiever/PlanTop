@@ -29,10 +29,13 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
         }
     }
     
-    // Header elements (Title on left, chevron, large futuristic orange time on right)
+    public var dayMode: CalendarDayMode = .today
+    
+    // Header elements (Row 1: Title & Chevron; Row 2: Full Time Range & Live Countdown Timer Badge)
     private let titleLabel = NSTextField(labelWithString: "")
     private let expandChevron = NSImageView()
-    private let futuristicTimeLabel = NSTextField(labelWithString: "")
+    private let timeRangeLabel = NSTextField(labelWithString: "")
+    private let timerBadgeLabel = NSTextField(labelWithString: "")
     
     // Expanded Detail Subviews inside elevated container casing
     public let detailCasing = NeumorphicElevatedCardView()
@@ -42,8 +45,9 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
     private let expandedMeetBtn = NeumorphicDynamicButton(frame: .zero)
     private let openCalAppBtn = NeumorphicDynamicButton(frame: .zero)
     
-    public init(event: CalendarEvent, frame: NSRect) {
+    public init(event: CalendarEvent, dayMode: CalendarDayMode = .today, frame: NSRect) {
         self.event = event
+        self.dayMode = dayMode
         super.init(frame: frame)
         cornerRadiusValue = 12
         surfaceColor = NSColor.white
@@ -62,12 +66,12 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
         layer?.masksToBounds = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         
-        // 1. Collapsed Title Label (Clean flat text)
+        // 1. Collapsed Title Label (Avenir bold)
         titleLabel.isBezeled = false
         titleLabel.drawsBackground = false
         titleLabel.isEditable = false
         titleLabel.isSelectable = false
-        titleLabel.font = NeumorphicTheme.roundedFont(ofSize: 13.5, weight: .bold)
+        titleLabel.font = NeumorphicTheme.avenirFont(ofSize: 13.5, weight: .bold)
         titleLabel.textColor = NeumorphicTheme.textPrimary
         titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
@@ -78,13 +82,23 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
         expandChevron.contentTintColor = NeumorphicTheme.textTertiary
         addSubview(expandChevron)
         
-        // 3. Large Futuristic Orange Time Label (thin futuristic font, height >= 80% container)
-        futuristicTimeLabel.isBezeled = false
-        futuristicTimeLabel.drawsBackground = false
-        futuristicTimeLabel.isEditable = false
-        futuristicTimeLabel.isSelectable = false
-        futuristicTimeLabel.alignment = .right
-        addSubview(futuristicTimeLabel)
+        // 3. Full Time Range Label (Row 2 Left - Both start and end, Avenir medium)
+        timeRangeLabel.isBezeled = false
+        timeRangeLabel.drawsBackground = false
+        timeRangeLabel.isEditable = false
+        timeRangeLabel.isSelectable = false
+        timeRangeLabel.font = NeumorphicTheme.avenirFont(ofSize: 11.5, weight: .medium)
+        timeRangeLabel.textColor = NeumorphicTheme.textSecondary
+        timeRangeLabel.lineBreakMode = .byTruncatingTail
+        addSubview(timeRangeLabel)
+        
+        // 4. Live Countdown Timer Badge Label (Row 2 Right - Monospaced digits)
+        timerBadgeLabel.isBezeled = false
+        timerBadgeLabel.drawsBackground = false
+        timerBadgeLabel.isEditable = false
+        timerBadgeLabel.isSelectable = false
+        timerBadgeLabel.alignment = .right
+        addSubview(timerBadgeLabel)
         
         // 4. Expanded Detail Casing (Plain flat container - borderless, lightened gray)
         detailCasing.cornerRadiusValue = 12
@@ -152,50 +166,38 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
         updateExpandedViewsVisibility(animated: false)
     }
     
-    private func futuristicTimeAttributedString() -> NSAttributedString {
-        if event.isAllDay {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NeumorphicTheme.futuristicTimeFont(ofSize: 22),
-                .foregroundColor: NeumorphicTheme.futuristicOrange
-            ]
-            return NSAttributedString(string: "ALL DAY", attributes: attrs)
-        }
+    private func timerAttributedString() -> NSAttributedString {
+        let now = Date()
+        let isClasses = (dayMode == .classes)
+        let isToday = (dayMode == .today)
+        let info = event.statusTimerInfo(isClassesCategory: isClasses, isTodayCategory: isToday, relativeTo: now)
         
-        let fLarge = NeumorphicTheme.futuristicTimeFont(ofSize: 48)
-        let fSmall = NeumorphicTheme.futuristicTimeFont(ofSize: 18)
-        let orange = NeumorphicTheme.futuristicOrange
+        let prefixFont = NeumorphicTheme.avenirFont(ofSize: 11.0, weight: .medium)
+        let timerFont = NeumorphicTheme.timerFont(ofSize: 11.5, weight: .bold)
         
-        let template = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: Locale.current) ?? ""
-        let is24Hour = !template.contains("a")
-        
-        if is24Hour {
-            let df = DateFormatter()
-            df.dateFormat = "HH:mm"
-            let timeStr = df.string(from: event.startDate)
-            return NSAttributedString(string: timeStr, attributes: [
-                .font: fLarge,
-                .foregroundColor: orange
-            ])
+        let color: NSColor
+        if info.isEnded {
+            color = NeumorphicTheme.textTertiary
+        } else if event.isHappeningNow {
+            color = NeumorphicTheme.coralAccent
+        } else if isToday {
+            color = NeumorphicTheme.accentColor
         } else {
-            let df = DateFormatter()
-            df.dateFormat = "h:mm"
-            let timeStr = df.string(from: event.startDate)
-            
-            let ampmDf = DateFormatter()
-            ampmDf.dateFormat = "a"
-            let ampmStr = ampmDf.string(from: event.startDate).uppercased()
-            
-            let attr = NSMutableAttributedString(string: timeStr, attributes: [
-                .font: fLarge,
-                .foregroundColor: orange
-            ])
-            attr.append(NSAttributedString(string: ampmStr, attributes: [
-                .font: fSmall,
-                .foregroundColor: orange,
-                .baselineOffset: 16
-            ]))
-            return attr
+            color = NeumorphicTheme.textSecondary
         }
+        
+        let attr = NSMutableAttributedString()
+        if !info.prefix.isEmpty {
+            attr.append(NSAttributedString(string: info.prefix, attributes: [
+                .font: prefixFont,
+                .foregroundColor: color.withAlphaComponent(0.85)
+            ]))
+        }
+        attr.append(NSAttributedString(string: info.timer, attributes: [
+            .font: timerFont,
+            .foregroundColor: color
+        ]))
+        return attr
     }
     
     public func setExpanded(_ expanded: Bool, animated: Bool) {
@@ -369,14 +371,14 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
     
     public static func height(for event: CalendarEvent, isExpanded: Bool, width: CGFloat) -> CGFloat {
         if !isExpanded {
-            return 58
+            return 64
         }
         let casingPad: CGFloat = 8
         let innerW = max(100, width - (casingPad * 2) - 24)
         
         var casingContentH: CGFloat = 12 // top padding inside detail container
         
-        // 1. Full Date & Time (Larger readable typography)
+        // 1. Full Date & Time (Avenir readable typography)
         casingContentH += 20 + 8
         
         // 2. Location (if any)
@@ -384,9 +386,9 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
             casingContentH += 20 + 8
         }
         
-        // 3. Notes (Larger readable typography)
+        // 3. Notes (Avenir readable typography)
         if let notes = event.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let notesFont = NeumorphicTheme.roundedFont(ofSize: 12.5, weight: .regular)
+            let notesFont = NeumorphicTheme.avenirFont(ofSize: 12.5, weight: .regular)
             let notesBounds = (notes as NSString).boundingRect(
                 with: CGSize(width: innerW, height: 160),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -400,7 +402,7 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
         // 4. Buttons (height 32pt)
         casingContentH += 32 + 12
         
-        let totalH = 56 + casingContentH + 10
+        let totalH = 62 + casingContentH + 10
         return totalH
     }
     
@@ -410,27 +412,29 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
     }
     
     public func updateWidth(_ width: CGFloat) {
-        let timeAttr = futuristicTimeAttributedString()
-        futuristicTimeLabel.attributedStringValue = timeAttr
-        let timeSize = timeAttr.size()
-        let timeW = ceil(timeSize.width) + 4
-        let timeH: CGFloat = 48 // >= 80% of 58pt container height (48 / 58 = 82.8%)
-        let timeX = max(10, width - timeW - 12)
-        futuristicTimeLabel.frame = NSRect(x: timeX, y: 5, width: timeW, height: timeH)
-        
         let chevSize: CGFloat = 12
-        let chevX = max(10, timeX - chevSize - 8)
-        expandChevron.frame = NSRect(x: chevX, y: 23, width: chevSize, height: chevSize)
+        let chevX = max(10, width - chevSize - 14)
+        expandChevron.frame = NSRect(x: chevX, y: 14, width: chevSize, height: chevSize)
         
         let titleW = max(30, chevX - 14 - 8)
-        titleLabel.frame = NSRect(x: 14, y: 18, width: titleW, height: 22)
+        titleLabel.frame = NSRect(x: 14, y: 10, width: titleW, height: 20)
+        
+        let timerAttr = timerAttributedString()
+        timerBadgeLabel.attributedStringValue = timerAttr
+        let timerSize = timerAttr.size()
+        let timerW = ceil(timerSize.width) + 4
+        let timerX = max(10, width - timerW - 14)
+        timerBadgeLabel.frame = NSRect(x: timerX, y: 35, width: timerW, height: 18)
+        
+        let timeRangeW = max(20, timerX - 14 - 8)
+        timeRangeLabel.frame = NSRect(x: 14, y: 35, width: timeRangeW, height: 18)
         
         if isExpanded {
             let targetCardH = CalendarEventCardView.height(for: event, isExpanded: true, width: width)
             let casingPad: CGFloat = 8
             let casingW = max(100, width - (casingPad * 2))
-            let casingH = max(10, targetCardH - 56 - 10)
-            detailCasing.frame = NSRect(x: casingPad, y: 56, width: casingW, height: casingH)
+            let casingH = max(10, targetCardH - 62 - 10)
+            detailCasing.frame = NSRect(x: casingPad, y: 62, width: casingW, height: casingH)
             
             let innerW = max(80, casingW - 24)
             var curY: CGFloat = 12
@@ -444,7 +448,7 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
             }
             
             let notesText = notesLabel.stringValue
-            let notesFont = NeumorphicTheme.roundedFont(ofSize: 12.5, weight: .regular)
+            let notesFont = NeumorphicTheme.avenirFont(ofSize: 12.5, weight: .regular)
             let notesBounds = (notesText as NSString).boundingRect(
                 with: CGSize(width: innerW, height: 160),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -470,20 +474,25 @@ final class CalendarEventCardView: NeumorphicDepressedCardView {
         let isPast = event.isPast
         let isHappeningNow = event.isHappeningNow
         
-        futuristicTimeLabel.attributedStringValue = futuristicTimeAttributedString()
+        timerBadgeLabel.attributedStringValue = timerAttributedString()
         
         if isPast {
             titleLabel.textColor = NeumorphicTheme.textTertiary
-            futuristicTimeLabel.alphaValue = 0.55
+            timeRangeLabel.textColor = NeumorphicTheme.textTertiary
         } else if isHappeningNow {
             titleLabel.textColor = NeumorphicTheme.coralAccent
-            futuristicTimeLabel.alphaValue = 1.0
+            timeRangeLabel.textColor = NeumorphicTheme.textPrimary
         } else {
             titleLabel.textColor = NeumorphicTheme.textPrimary
-            futuristicTimeLabel.alphaValue = 1.0
+            timeRangeLabel.textColor = NeumorphicTheme.textSecondary
         }
         
         titleLabel.stringValue = event.title
+        
+        // Show full time range (both start and end, plus day if classes in future)
+        let showDay = (dayMode == .classes)
+        timeRangeLabel.stringValue = event.fullTimeRangeString(includeDay: showDay)
+        
         updateWidth(frame.width)
     }
 }
@@ -828,7 +837,7 @@ public final class CalendarPanelView: NSView {
                 scrollView.isHidden = true
                 switch dayMode {
                 case .classes:
-                    emptyStateLabel.stringValue = "No classes scheduled for today"
+                    emptyStateLabel.stringValue = "No upcoming classes scheduled"
                 case .today:
                     emptyStateLabel.stringValue = "No more events today"
                 case .tomorrow:
@@ -866,7 +875,7 @@ public final class CalendarPanelView: NSView {
         for event in events {
             let isExp = (expandedEventId == event.id)
             let cardH = CalendarEventCardView.height(for: event, isExpanded: isExp, width: cardW)
-            let card = CalendarEventCardView(event: event, frame: NSRect(x: cardPad, y: curY, width: cardW, height: cardH))
+            let card = CalendarEventCardView(event: event, dayMode: self.dayMode, frame: NSRect(x: cardPad, y: curY, width: cardW, height: cardH))
             card.setExpanded(isExp, animated: false)
             card.updateWidth(cardW)
             card.onOpenMeetURL = onOpenMeetURL
@@ -926,7 +935,7 @@ public final class CalendarPanelView: NSView {
     
     private func startSecondTicker() {
         secondTickerTimer?.invalidate()
-        let timer = Timer(timeInterval: 30.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateCardTimers()
         }
         RunLoop.main.add(timer, forMode: .common)

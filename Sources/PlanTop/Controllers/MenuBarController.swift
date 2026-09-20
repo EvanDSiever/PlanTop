@@ -114,7 +114,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         headerItem.attributedTitle = NSAttributedString(
             string: "PlanTop • \(df.string(from: now))",
             attributes: [
-                .font: NSFont.boldSystemFont(ofSize: 13),
+                .font: NeumorphicTheme.avenirFont(ofSize: 13, weight: .bold),
                 .foregroundColor: NSColor.labelColor
             ]
         )

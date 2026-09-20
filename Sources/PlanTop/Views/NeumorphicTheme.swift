@@ -64,35 +64,41 @@ public struct NeumorphicTheme {
         return String(format: "#%02X%02X%02X", r, g, b)
     }
     
-    // MARK: - Typography (User Customizable)
+    // MARK: - Typography (Avenir Brand Typography)
+    public static func avenirFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let fontName: String
+        switch weight {
+        case .ultraLight, .thin, .light:
+            fontName = "Avenir-Light"
+        case .medium:
+            fontName = "Avenir-Medium"
+        case .semibold, .bold:
+            fontName = "Avenir-Heavy"
+        case .heavy, .black:
+            fontName = "Avenir-Black"
+        default:
+            fontName = "Avenir-Book"
+        }
+        if let f = NSFont(name: fontName, size: size) {
+            return f
+        }
+        if let f = NSFont(name: "Avenir", size: size) {
+            return f
+        }
+        return NSFont.systemFont(ofSize: size, weight: weight)
+    }
+    
     public static func roundedFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
-        if family == "System" {
-            return NSFont.systemFont(ofSize: size, weight: weight)
-        } else if family == "Monospaced" {
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-        } else if family == "Serif" {
-            if let desc = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.serif) {
-                return NSFont(descriptor: desc, size: size) ?? NSFont.systemFont(ofSize: size, weight: weight)
-            }
-        }
-        let base = NSFont.systemFont(ofSize: size, weight: weight)
-        if let desc = base.fontDescriptor.withDesign(.rounded) {
-            return NSFont(descriptor: desc, size: size) ?? base
-        }
-        return base
+        return avenirFont(ofSize: size, weight: weight)
     }
     
     public static func monospacedRoundedFont(ofSize size: CGFloat, weight: NSFont.Weight = .bold) -> NSFont {
-        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
-        if family == "System" || family == "Monospaced" {
-            return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
-        }
-        let base = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
-        if let desc = base.fontDescriptor.withDesign(.rounded) {
-            return NSFont(descriptor: desc, size: size) ?? base
-        }
-        return base
+        return avenirFont(ofSize: size, weight: weight)
+    }
+    
+    /// Dedicated monospaced numeric font for ticking timers to prevent digit jitter
+    public static func timerFont(ofSize size: CGFloat, weight: NSFont.Weight = .semibold) -> NSFont {
+        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
     }
     
     /// Primary text - Modern slate charcoal (#0F172A)

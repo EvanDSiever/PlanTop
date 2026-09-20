@@ -143,12 +143,27 @@ public struct CalendarEvent: Identifiable, Equatable {
         return startDate > Date()
     }
     
+    public var hasIELPrefix: Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stripped = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "[](){}:-–—#* \t"))
+        let lowerStripped = stripped.lowercased()
+        if lowerStripped.hasPrefix("iel") {
+            if lowerStripped.count == 3 { return true }
+            let fourthChar = lowerStripped[lowerStripped.index(lowerStripped.startIndex, offsetBy: 3)]
+            return !fourthChar.isLetter || fourthChar.isWhitespace || fourthChar.isNumber
+        }
+        return false
+    }
+    
     public var isClassOrAlfatih: Bool {
+        if hasIELPrefix {
+            return true
+        }
         let lower = title.lowercased()
         let identifierStr = UserDefaults.standard.string(forKey: "plantop_class_identifiers")
             ?? UserDefaults.standard.string(forKey: "calendarClassIdentifiers")
             ?? UserDefaults.standard.string(forKey: "songtop_class_identifiers")
-            ?? "Class IEL, Alfatih"
+            ?? "IEL, Class IEL, Alfatih"
         let keywords = identifierStr
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -159,7 +174,9 @@ public struct CalendarEvent: Identifiable, Equatable {
         }
         
         for kw in keywords {
-            if lower.contains(kw) {
+            if kw == "iel" {
+                if hasIELPrefix { return true }
+            } else if lower.contains(kw) {
                 return true
             }
         }
@@ -238,14 +255,115 @@ public struct CalendarEvent: Identifiable, Equatable {
     }
     
     public var formattedTime: String {
+        return fullTimeRangeString(includeDay: false)
+    }
+    
+    /// Full time range (both start and end if any), optionally including relative or formatted day
+    public func fullTimeRangeString(includeDay: Bool = false) -> String {
         if isAllDay {
+            if includeDay {
+                let cal = Calendar.current
+                if cal.isDateInToday(startDate) {
+                    return "Today • All Day"
+                } else if cal.isDateInTomorrow(startDate) {
+                    return "Tomorrow • All Day"
+                } else {
+                    let dayFmt = DateFormatter()
+                    dayFmt.dateFormat = "EEE, MMM d"
+                    return "\(dayFmt.string(from: startDate)) • All Day"
+                }
+            }
             return "All Day"
         }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        let startStr = formatter.string(from: startDate)
-        let endStr = formatter.string(from: endDate)
-        return "\(startStr) – \(endStr)"
+        
+        let timeFmt = DateFormatter()
+        timeFmt.timeStyle = .short
+        let startStr = timeFmt.string(from: startDate)
+        let endStr = timeFmt.string(from: endDate)
+        let timeSpan = "\(startStr) – \(endStr)"
+        
+        if includeDay {
+            let cal = Calendar.current
+            if !cal.isDateInToday(startDate) {
+                if cal.isDateInTomorrow(startDate) {
+                    return "Tomorrow • \(timeSpan)"
+                } else {
+                    let dayFmt = DateFormatter()
+                    dayFmt.dateFormat = "EEE, MMM d"
+                    return "\(dayFmt.string(from: startDate)) • \(timeSpan)"
+                }
+            }
+        }
+        return timeSpan
+    }
+    
+    /// Formats remaining duration according to "XX days XX hours ..." specifications
+    public static func formatRemainingDuration(_ interval: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(interval))
+        let days = totalSeconds / 86400
+        let hours = (totalSeconds % 86400) / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        
+        if days > 0 {
+            let dUnit = days == 1 ? "day" : "days"
+            let hUnit = hours == 1 ? "hour" : "hours"
+            if hours > 0 {
+                return "\(days) \(dUnit) \(hours) \(hUnit)"
+            } else {
+                return "\(days) \(dUnit)"
+            }
+        } else if hours > 0 {
+            let hUnit = hours == 1 ? "hour" : "hours"
+            let mUnit = minutes == 1 ? "min" : "mins"
+            if minutes > 0 {
+                return "\(hours) \(hUnit) \(minutes) \(mUnit)"
+            } else {
+                return "\(hours) \(hUnit)"
+            }
+        } else if minutes > 0 {
+            let mUnit = minutes == 1 ? "min" : "mins"
+            if seconds > 0 {
+                return "\(minutes) \(mUnit) \(seconds)s"
+            } else {
+                return "\(minutes) \(mUnit)"
+            }
+        } else {
+            return "\(seconds)s"
+        }
+    }
+    
+    /// Returns the countdown timer prefix and duration text for Classes, Today, or other categories
+    public func statusTimerInfo(isClassesCategory: Bool, isTodayCategory: Bool, relativeTo now: Date = Date()) -> (prefix: String, timer: String, isEnded: Bool) {
+        if isClassesCategory {
+            if now < startDate {
+                let diff = startDate.timeIntervalSince(now)
+                return ("Starts in ", CalendarEvent.formatRemainingDuration(diff), false)
+            } else if now <= endDate {
+                let diff = endDate.timeIntervalSince(now)
+                return ("Ends in ", CalendarEvent.formatRemainingDuration(diff), false)
+            } else {
+                return ("", "Ended", true)
+            }
+        } else if isTodayCategory {
+            if now <= endDate {
+                let diff = endDate.timeIntervalSince(now)
+                return ("Limit in ", CalendarEvent.formatRemainingDuration(diff), false)
+            } else {
+                return ("", "Ended", true)
+            }
+        } else {
+            // General / Tomorrow category
+            if now < startDate {
+                let diff = startDate.timeIntervalSince(now)
+                return ("Starts in ", CalendarEvent.formatRemainingDuration(diff), false)
+            } else if now <= endDate {
+                let diff = endDate.timeIntervalSince(now)
+                return ("Ends in ", CalendarEvent.formatRemainingDuration(diff), false)
+            } else {
+                return ("", "Ended", true)
+            }
+        }
     }
     
     public var relativeStatusText: String {
