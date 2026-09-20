@@ -1,94 +1,85 @@
-# SongTop: Complete User Guide
+# PlanTop: Complete User Guide
 
-Welcome to **SongTop**! This guide walks you through getting the most out of your native macOS YouTube Now Playing & Google Calendar companion.
+Welcome to **PlanTop**! This guide walks you through getting the most out of your native macOS stealth daily planner & Google Calendar companion.
 
 ---
 
 ## 1. Installation
 
-1. Download `SongTop.zip` or clone this repository and run `./build_app.sh`.
-2. Drag `SongTop.app` to your `/Applications` directory.
-3. Open `SongTop.app`.
+1. Download `PlanTop.zip` or clone this repository and run `./build_app.sh`.
+2. Drag `PlanTop.app` to your `/Applications` directory.
+3. Open `PlanTop.app`.
 
 ### Resolving macOS Gatekeeper Warnings
-Because SongTop is an independent open-source macOS utility:
-- **First Open**: Control-click (or right-click) `SongTop.app` in `/Applications`, select **Open**, and click **Open** in the dialog.
+Because PlanTop is an independent open-source macOS utility:
+- **First Open**: Control-click (or right-click) `PlanTop.app` in `/Applications`, select **Open**, and click **Open** in the dialog.
 - Alternatively, run this terminal command:
   ```bash
-  xattr -cr /Applications/SongTop.app
+  xattr -cr /Applications/PlanTop.app
   ```
 
 ---
 
 ## 2. Stealth Background Operation
 
-SongTop is designed to be invisible until you need it:
-- **No Dock Icon**: SongTop does not show in the macOS Dock, keeping your Dock reserved for your active working apps.
-- **Menu Bar Access**: Click the equalizer icon in the menu bar at any time to check track status or open settings.
-- **Spotlight Activation**: Press `Cmd + Space`, type `SongTop`, and press `Enter` to bring up the Settings window.
+PlanTop is designed to stay completely out of your way until you need it:
+- **No Dock Icon**: PlanTop operates as a macOS accessory (`LSUIElement`) and does not appear in the Dock, reserving your dock space for primary apps.
+- **Menu Bar Access**: Look for the calendar-clock icon in the top right macOS menu bar. Click it to view today's upcoming events, sync status, or open settings.
+- **Spotlight Activation**: Press `Cmd + Space`, type `PlanTop`, and press `Enter` to bring up the Settings window at any time.
 
 ---
 
 ## 3. Right-Edge Hover Panel
 
 Move your mouse cursor towards the right edge of your screen:
-- The companion panel smoothly slides out with a fast-entry decelerating ease-out curve.
-- It displays currently detected YouTube media, companion video playback, and your daily schedule.
+- The daily planner panel smoothly slides out with a fast-entry decelerating ease-out curve.
+- It displays your live date and futuristic digital clock, current countdowns, and daily schedule cards.
 - When you move your cursor away, the panel retracts smoothly into the edge.
 - If you prefer the panel to stay on screen permanently, click the **Pin** icon at the top right of the panel.
+- Drag the left edge of the panel to dynamically resize the width from 260px to 650px.
 
 ---
 
-## 4. Enabling Browser Automation (Optional for Enhanced Controls)
+## 4. Google Calendar & Custom Class Detectors
 
-SongTop automatically detects video titles from browser tabs. To enable zero-latency media control (play/pause, skip track, time synchronization):
-- **Google Chrome / Brave / Arc**:
-  Go to menu bar: `View` > `Developer` > check `Allow JavaScript from Apple Events`.
-- **Safari**:
-  Go to `Safari` > `Settings` > `Advanced` > check `Show Develop menu in menu bar`.
-  Then in menu bar: `Develop` > check `Allow JavaScript from Apple Events`.
-
----
-
-## 5. Google Calendar & Custom Class Detectors
-
-SongTop categorizes your calendar events into three views:
-- **Classes**: Dedicated tab for academic lectures, discussions, and labs.
-- **Today**: All schedule items for today.
+PlanTop organizes your events into three focused views:
+- **Classes**: Dedicated tab for lectures, discussions, labs, and academic sessions.
+- **Today**: All schedule items for today with active status badges (`[NOW]`, `In 15m`).
 - **Tomorrow**: Preview of tomorrow's schedule.
 
 ### Setting Up Class Detectors:
-1. Open **SongTop Settings & Customization**.
-2. Scroll to the **Google Calendar Activity Panel** section.
-3. In the **Class Detectors** field, enter your identifiers separated by commas:
+1. Open **PlanTop Settings & Preferences**.
+2. Under **Daily Planner & Google Calendar Integration**, find the **Class Detectors** field.
+3. Enter your identifiers separated by commas:
    ```
-   Class IEL, Alfatih, Lecture, Lab
+   Class IEL, Alfatih, Lecture, Lab, Seminar
    ```
-4. Any calendar event with a title containing any of these keywords will immediately be routed to the **Classes** tab.
+4. Any calendar event with a matching title is automatically routed to the **Classes** tab.
 
 ### Expanding Event Details:
 - Click any calendar event card to view:
   - Date and time span
   - Location
   - Description / notes
-  - One-click button to open in Google Calendar or Google Meet
+  - One-click button to launch Google Meet, Zoom, or Teams
+  - Direct button to view in the macOS Calendar app
 
 ---
 
-## 6. Customizing Themes, Colors & Futuristic Fonts
+## 5. Customizing Themes, Colors & Futuristic Fonts
 
-1. Open **SongTop Settings & Customization**.
+1. Open **PlanTop Settings & Preferences**.
 2. In the **Appearance, Color Scheme & Typography** card:
-   - **Accent Colors**: Click preset buttons for **Orange**, **Coral**, **Blue**, **Green**, or **Purple**, or click the color well to select any custom hex color.
-   - **Time Font**: Select between `Alien League Condensed`, `Alien League Regular`, `Futura Condensed Light`, `SF Pro Rounded Light`, or `Monospaced Digit`.
-   - **App Font**: Select between `SF Pro Rounded (Default)`, `System Default`, `Monospaced`, or `Serif`.
-- All changes update immediately across the entire app without requiring a restart.
+   - **Accent Colors**: Select between **Orange**, **Coral**, **Blue**, **Green**, or **Purple**, or use the color picker for any custom hex color.
+   - **Time Font**: Choose between `Alien League Condensed`, `Alien League Regular`, `Futura Condensed Light`, `SF Pro Rounded Light`, or `Monospaced Digit`.
+   - **App Font**: Choose between `SF Pro Rounded (Default)`, `System Default`, `Monospaced`, or `Serif`.
+- All theme updates reflect instantly across the side panel and menu bar.
 
 ---
 
-## 7. Starting Automatically at Login
+## 6. Starting Automatically at Login
 
-To make SongTop feel like a built-in macOS feature:
-1. Open **SongTop Settings & Customization**.
-2. In the **System & Menu Bar Integration** card, check **Launch SongTop automatically at login**.
-3. SongTop will start silently in the background whenever your Mac turns on or logs in.
+To have PlanTop ready on your desktop whenever you start your Mac:
+1. Open **PlanTop Settings & Preferences**.
+2. Under **System & Menu Bar Integration**, check **Launch PlanTop automatically at login**.
+3. PlanTop will start silently in the background on every Mac boot without popping up any intrusive windows.

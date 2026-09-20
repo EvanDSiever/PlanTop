@@ -4,7 +4,10 @@ import EventKit
 import Combine
 
 extension Notification.Name {
-    public static let songTopCalendarUpdated = Notification.Name("com.songtop.calendarUpdated")
+    public static let planTopCalendarUpdated = Notification.Name("com.plantop.calendarUpdated")
+    public static let songTopCalendarUpdated = planTopCalendarUpdated
+    public static let planTopSettingsChanged = Notification.Name("com.plantop.settingsChanged")
+    public static let songTopSettingsChanged = planTopSettingsChanged
 }
 
 public enum CalendarSyncStatus: Equatable {
@@ -39,35 +42,35 @@ public final class GoogleCalendarService: ObservableObject {
     @Published public var isCalendarEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isCalendarEnabled, forKey: "isCalendarEnabled")
-            NotificationCenter.default.post(name: .songTopSettingsChanged, object: nil)
+            NotificationCenter.default.post(name: .planTopSettingsChanged, object: nil)
         }
     }
     
     @Published public var isClassesExpanded: Bool {
         didSet {
             UserDefaults.standard.set(isClassesExpanded, forKey: "isClassesCalendarExpanded")
-            NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
+            NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
         }
     }
     
     @Published public var isTodayExpanded: Bool {
         didSet {
             UserDefaults.standard.set(isTodayExpanded, forKey: "isTodayCalendarExpanded")
-            NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
+            NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
         }
     }
     
     @Published public var isTomorrowExpanded: Bool {
         didSet {
             UserDefaults.standard.set(isTomorrowExpanded, forKey: "isTomorrowCalendarExpanded")
-            NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
+            NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
         }
     }
     
     private let eventStore = EKEventStore()
     private var liveSyncTimer: Timer?
     private var timeTickerTimer: Timer?
-    private let queue = DispatchQueue(label: "com.songtop.calendar.sync", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.plantop.calendar.sync", qos: .userInitiated)
     
     public init() {
         self.customICalURL = UserDefaults.standard.string(forKey: "googleCalendarICalURL") ?? ""
@@ -156,11 +159,15 @@ public final class GoogleCalendarService: ObservableObject {
         checkAuthorizationAndFetch()
     }
     
+    public func syncNow() {
+        refresh()
+    }
+    
     public func requestAccess(completion: @escaping (Bool) -> Void) {
-        NSLog("[SongTop-Calendar] requestAccess called")
+        NSLog("[PlanTop-Calendar] requestAccess called")
         if #available(macOS 14.0, *) {
             eventStore.requestFullAccessToEvents { [weak self] granted, error in
-                NSLog("[SongTop-Calendar] requestFullAccessToEvents callback granted: %d, error: %@", granted ? 1 : 0, String(describing: error))
+                NSLog("[PlanTop-Calendar] requestFullAccessToEvents callback granted: %d, error: %@", granted ? 1 : 0, String(describing: error))
                 DispatchQueue.main.async {
                     if granted {
                         self?.fetchEvents()
@@ -172,7 +179,7 @@ public final class GoogleCalendarService: ObservableObject {
             }
         } else {
             eventStore.requestAccess(to: .event) { [weak self] granted, error in
-                NSLog("[SongTop-Calendar] requestAccess callback granted: %d, error: %@", granted ? 1 : 0, String(describing: error))
+                NSLog("[PlanTop-Calendar] requestAccess callback granted: %d, error: %@", granted ? 1 : 0, String(describing: error))
                 DispatchQueue.main.async {
                     if granted {
                         self?.fetchEvents()
@@ -187,7 +194,7 @@ public final class GoogleCalendarService: ObservableObject {
     
     private func checkAuthorizationAndFetch() {
         let status = EKEventStore.authorizationStatus(for: .event)
-        NSLog("[SongTop-Calendar] checkAuthorizationAndFetch status rawValue = %ld", status.rawValue)
+        NSLog("[PlanTop-Calendar] checkAuthorizationAndFetch status rawValue = %ld", status.rawValue)
         
         if status.rawValue == 3 {
             fetchEvents()
@@ -199,10 +206,11 @@ public final class GoogleCalendarService: ObservableObject {
                 fetchEvents()
                 return
             }
-        }
-        if status == .authorized {
-            fetchEvents()
-            return
+        } else {
+            if status == .authorized {
+                fetchEvents()
+                return
+            }
         }
         
         if status == .notDetermined {
@@ -275,7 +283,7 @@ public final class GoogleCalendarService: ObservableObject {
             let tomorrowFiltered = mappedTomorrow.filter { !$0.isClassOrAlfatih }
             
             DispatchQueue.main.async {
-                NSLog("[SongTop-Calendar] fetchEvents: %ld classes, %ld today, %ld tomorrow", classesList.count, todayFiltered.count, tomorrowFiltered.count)
+                NSLog("[PlanTop-Calendar] fetchEvents: %ld classes, %ld today, %ld tomorrow", classesList.count, todayFiltered.count, tomorrowFiltered.count)
                 self.classesEvents = classesList
                 self.todaysEvents = todayFiltered
                 self.tomorrowsEvents = tomorrowFiltered

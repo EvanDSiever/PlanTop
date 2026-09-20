@@ -145,7 +145,10 @@ public struct CalendarEvent: Identifiable, Equatable {
     
     public var isClassOrAlfatih: Bool {
         let lower = title.lowercased()
-        let identifierStr = UserDefaults.standard.string(forKey: "songtop_class_identifiers") ?? "Class IEL, Alfatih"
+        let identifierStr = UserDefaults.standard.string(forKey: "plantop_class_identifiers")
+            ?? UserDefaults.standard.string(forKey: "calendarClassIdentifiers")
+            ?? UserDefaults.standard.string(forKey: "songtop_class_identifiers")
+            ?? "Class IEL, Alfatih"
         let keywords = identifierStr
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -307,5 +310,20 @@ public struct CalendarEvent: Identifiable, Equatable {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
         let matches = detector.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
         return matches.first?.url
+    }
+    
+    public var formattedStartTime: String {
+        if isAllDay { return "All Day" }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: startDate)
+    }
+    
+    public var videoMeetingURL: URL? {
+        return meetURL
+    }
+    
+    public var webCalendarURL: URL? {
+        return url
     }
 }

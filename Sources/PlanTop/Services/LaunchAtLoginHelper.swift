@@ -30,12 +30,12 @@ public final class LaunchAtLoginHelper {
             configureLaunchAgent(enabled: enabled)
         }
         
-        UserDefaults.standard.set(enabled, forKey: "songtop_launch_at_login")
+        UserDefaults.standard.set(enabled, forKey: "plantop_launch_at_login")
     }
     
     private static var launchAgentPlistURL: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent("Library/LaunchAgents/com.songtop.mac.plist")
+        return home.appendingPathComponent("Library/LaunchAgents/com.plantop.mac.plist")
     }
     
     private static var isLaunchAgentInstalled: Bool {
@@ -50,14 +50,14 @@ public final class LaunchAtLoginHelper {
             let dir = plistURL.deletingLastPathComponent()
             try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
             
-            let execPath = Bundle.main.executablePath ?? "/Applications/SongTop.app/Contents/MacOS/SongTop"
+            let execPath = Bundle.main.executablePath ?? "/Applications/PlanTop.app/Contents/MacOS/PlanTop"
             let plist = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0">
             <dict>
                 <key>Label</key>
-                <string>com.songtop.mac</string>
+                <string>com.plantop.mac</string>
                 <key>ProgramArguments</key>
                 <array>
                     <string>\(execPath)</string>

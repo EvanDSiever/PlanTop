@@ -2,22 +2,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "SongTop",
+    name: "PlanTop",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .executable(
-            name: "SongTop",
-            targets: ["SongTop"]
+            name: "PlanTop",
+            targets: ["PlanTop"]
         )
     ],
     dependencies: [],
     targets: [
         .executableTarget(
-            name: "SongTop",
+            name: "PlanTop",
             dependencies: [],
-            path: "Sources/SongTop"
+            path: "Sources/PlanTop"
         )
     ]
 )
+

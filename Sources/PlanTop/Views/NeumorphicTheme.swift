@@ -25,7 +25,7 @@ public struct NeumorphicTheme {
     
     /// Dynamic user-selected theme accent (Orange by default)
     public static var accentColor: NSColor {
-        if let hex = UserDefaults.standard.string(forKey: "songtop_accent_color_hex"),
+        if let hex = UserDefaults.standard.string(forKey: "plantop_accent_color_hex") ?? UserDefaults.standard.string(forKey: "songtop_accent_color_hex"),
            let color = colorFromHex(hex) {
             return color
         }
@@ -66,7 +66,7 @@ public struct NeumorphicTheme {
     
     // MARK: - Typography (User Customizable)
     public static func roundedFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        let family = UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
+        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
         if family == "System" {
             return NSFont.systemFont(ofSize: size, weight: weight)
         } else if family == "Monospaced" {
@@ -84,7 +84,7 @@ public struct NeumorphicTheme {
     }
     
     public static func monospacedRoundedFont(ofSize size: CGFloat, weight: NSFont.Weight = .bold) -> NSFont {
-        let family = UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
+        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
         if family == "System" || family == "Monospaced" {
             return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
         }
@@ -149,7 +149,7 @@ public struct NeumorphicTheme {
     }
     
     public static func futuristicTimeFont(ofSize size: CGFloat) -> NSFont {
-        let chosenFont = UserDefaults.standard.string(forKey: "songtop_time_font_name") ?? "AlienLeagueCondensed"
+        let chosenFont = UserDefaults.standard.string(forKey: "plantop_time_font_name") ?? UserDefaults.standard.string(forKey: "songtop_time_font_name") ?? "AlienLeagueCondensed"
         if let font = NSFont(name: chosenFont, size: size) {
             return font
         }

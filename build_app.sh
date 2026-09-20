@@ -4,17 +4,17 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
-echo "🔨 Compiling SongTop..."
-swiftc -O -framework AppKit -framework QuartzCore -framework Combine -framework WebKit -framework EventKit -framework ServiceManagement \
-    Sources/SongTop/Models/*.swift \
-    Sources/SongTop/Services/*.swift \
-    Sources/SongTop/Views/*.swift \
-    Sources/SongTop/Controllers/*.swift \
-    Sources/SongTop/AppDelegate.swift \
-    Sources/SongTop/main.swift \
-    -o SongTop
+echo "🔨 Compiling PlanTop..."
+swiftc -O -framework AppKit -framework QuartzCore -framework Combine -framework EventKit -framework ServiceManagement \
+    Sources/PlanTop/Models/*.swift \
+    Sources/PlanTop/Services/*.swift \
+    Sources/PlanTop/Views/*.swift \
+    Sources/PlanTop/Controllers/*.swift \
+    Sources/PlanTop/AppDelegate.swift \
+    Sources/PlanTop/main.swift \
+    -o PlanTop
 
-APP_NAME="SongTop.app"
+APP_NAME="PlanTop.app"
 APP_DIR="$DIR/$APP_NAME"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -26,8 +26,8 @@ mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
 # Copy binary
-cp SongTop "$MACOS_DIR/SongTop"
-chmod +x "$MACOS_DIR/SongTop"
+cp PlanTop "$MACOS_DIR/PlanTop"
+chmod +x "$MACOS_DIR/PlanTop"
 
 # Copy Icon if present
 if [ -f "$DIR/AppIcon.icns" ]; then
@@ -43,17 +43,17 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>SongTop</string>
+    <string>PlanTop</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.songtop.mac</string>
+    <string>com.plantop.mac</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>SongTop</string>
+    <string>PlanTop</string>
     <key>CFBundleDisplayName</key>
-    <string>SongTop</string>
+    <string>PlanTop</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -66,12 +66,10 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>SongTop detects currently playing YouTube tracks from your web browser tabs.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>SongTop accesses your calendar to display today's events in the calendar panel.</string>
+    <string>PlanTop accesses your calendar to display your schedule in the daily planner panel.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>SongTop accesses your Google Calendar events to show today's schedule in the floating panel.</string>
+    <string>PlanTop accesses your calendar events to show your schedule in the daily planner panel.</string>
 </dict>
 </plist>
 EOF
@@ -79,10 +77,11 @@ EOF
 # Ad-hoc codesign
 codesign --force --deep -s - "$APP_DIR" 2>/dev/null || true
 
-echo "📦 Packaging SongTop.zip for distribution..."
-rm -f "$DIR/SongTop.zip"
-zip -r -y -q "$DIR/SongTop.zip" "$APP_NAME"
+echo "📦 Packaging PlanTop.zip for distribution..."
+rm -f "$DIR/PlanTop.zip"
+zip -r -y -q "$DIR/PlanTop.zip" "$APP_NAME"
 
 echo "✅ Successfully built and signed $APP_NAME!"
 echo "📍 Location: $APP_DIR"
-echo "🎁 Release archive: $DIR/SongTop.zip"
+echo "🎁 Release archive: $DIR/PlanTop.zip"
+
