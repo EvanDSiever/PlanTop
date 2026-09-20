@@ -144,6 +144,7 @@ public final class FloatingPillView: NSView {
     public var onHeightChanged: (() -> Void)?
     public var onDismiss: (() -> Void)?
     public var onHoverStateChanged: ((Bool) -> Void)?
+    public var onUserInteraction: (() -> Void)?
     
     private var trackingArea: NSTrackingArea?
     private var timeTickerTimer: Timer?
@@ -237,6 +238,9 @@ public final class FloatingPillView: NSView {
         calendarPanel.onHeightChanged = { [weak self] in
             self?.needsLayout = true
             self?.onHeightChanged?()
+        }
+        calendarPanel.onUserInteraction = { [weak self] in
+            self?.onUserInteraction?()
         }
         calendarPanel.onOpenMeetURL = { url in
             NSWorkspace.shared.open(url)

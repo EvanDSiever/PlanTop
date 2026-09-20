@@ -775,6 +775,7 @@ public final class CalendarPanelView: NSView {
     }
     public var onHeightChanged: (() -> Void)?
     public var onOpenMeetURL: ((URL) -> Void)?
+    public var onUserInteraction: (() -> Void)?
     
     // Switcher bar container & tabs
     private let switcherContainer = NSView()
@@ -1040,6 +1041,7 @@ public final class CalendarPanelView: NSView {
     
     public func selectDayMode(_ mode: CalendarDayMode) {
         guard self.dayMode != mode && !isTransitioningCategory else { return }
+        onUserInteraction?()
         isTransitioningCategory = true
         self.dayMode = mode
         self.expandedEventId = nil
@@ -1101,6 +1103,7 @@ public final class CalendarPanelView: NSView {
     }
     
     @objc private func handleTabClicked(_ sender: NSButton) {
+        onUserInteraction?()
         if sender == classesTabBtn {
             selectDayMode(.classes)
         } else if sender == todayTabBtn {
