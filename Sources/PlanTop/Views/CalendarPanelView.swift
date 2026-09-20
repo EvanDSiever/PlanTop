@@ -91,14 +91,14 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
         
-        // 2. Full Time Range Label (Row 1 Right side, Avenir regular, not bolded)
+        // 2. Event Time Label (Row 1 Right side, futuristic font)
         timeRangeLabel.isBezeled = false
         timeRangeLabel.drawsBackground = false
         timeRangeLabel.isEditable = false
         timeRangeLabel.isSelectable = false
         timeRangeLabel.alignment = .right
-        timeRangeLabel.font = NeumorphicTheme.avenirFont(ofSize: 13.0, weight: .regular)
-        timeRangeLabel.textColor = NeumorphicTheme.textSecondary
+        timeRangeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 13.5)
+        timeRangeLabel.textColor = NeumorphicTheme.accentColor
         timeRangeLabel.lineBreakMode = .byTruncatingTail
         addSubview(timeRangeLabel)
         
@@ -206,7 +206,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         let info = event.statusTimerInfo(isClassesCategory: isClasses, isTodayCategory: isToday, relativeTo: now)
         
         let prefixFont = NeumorphicTheme.avenirFont(ofSize: 12.0, weight: .regular)
-        let timerFont = NeumorphicTheme.futuristicTimeFont(ofSize: 13.5)
+        let timerFont = NeumorphicTheme.avenirFont(ofSize: 13.0, weight: .regular)
         
         let color: NSColor
         if info.isEnded {
@@ -518,12 +518,13 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         let removeBtnX = max(10, width - removeBtnSize - 12)
         removeButton.frame = NSRect(x: removeBtnX, y: 11, width: removeBtnSize, height: removeBtnSize)
         
-        let showDay = (dayMode == .classes)
-        let timeRangeStr = event.fullTimeRangeString(includeDay: showDay)
+        let isClasses = (dayMode == .classes)
+        let timeRangeStr = isClasses ? event.fullTimeRangeString(includeDay: false) : event.formattedStartTime
         timeRangeLabel.stringValue = timeRangeStr
-        let timeFont = NeumorphicTheme.avenirFont(ofSize: 13.0, weight: .regular)
+        let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 13.5)
+        timeRangeLabel.font = timeFont
         let timeStrSize = (timeRangeStr as NSString).size(withAttributes: [.font: timeFont])
-        let timeRangeW = min(160, ceil(timeStrSize.width) + 4)
+        let timeRangeW = min(160, ceil(timeStrSize.width) + 6)
         let timeRangeX = max(10, removeBtnX - timeRangeW - 6)
         timeRangeLabel.frame = NSRect(x: timeRangeX, y: 11, width: timeRangeW, height: 20)
         
@@ -593,16 +594,16 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
             timeRangeLabel.textColor = NeumorphicTheme.textTertiary
         } else if isHappeningNow {
             titleLabel.textColor = NeumorphicTheme.coralAccent
-            timeRangeLabel.textColor = NeumorphicTheme.textPrimary
+            timeRangeLabel.textColor = NeumorphicTheme.coralAccent
         } else {
             titleLabel.textColor = NeumorphicTheme.textPrimary
-            timeRangeLabel.textColor = NeumorphicTheme.textSecondary
+            timeRangeLabel.textColor = NeumorphicTheme.accentColor
         }
         
         titleLabel.stringValue = event.title
         
-        let showDay = (dayMode == .classes)
-        timeRangeLabel.stringValue = event.fullTimeRangeString(includeDay: showDay)
+        let isClasses = (dayMode == .classes)
+        timeRangeLabel.stringValue = isClasses ? event.fullTimeRangeString(includeDay: false) : event.formattedStartTime
         
         updateWidth(frame.width)
     }
@@ -878,7 +879,7 @@ public final class CalendarPanelView: NSView {
     private func updateDateHeader() {
         switch dayMode {
         case .classes:
-            subtitleLabel.stringValue = "Academic Classes & Lectures"
+            subtitleLabel.stringValue = "Today's Classes & Lectures"
         case .today:
             let formatter = DateFormatter()
             formatter.dateFormat = "EEEE, MMMM d"
@@ -927,7 +928,7 @@ public final class CalendarPanelView: NSView {
                 self.emptyStateLabel.isHidden = false
                 self.scrollView.isHidden = true
                 switch self.dayMode {
-                case .classes: self.emptyStateLabel.stringValue = "No upcoming classes scheduled"
+                case .classes: self.emptyStateLabel.stringValue = "No classes scheduled for today"
                 case .today: self.emptyStateLabel.stringValue = "No more events today"
                 case .tomorrow: self.emptyStateLabel.stringValue = "No events scheduled for tomorrow"
                 }
@@ -990,7 +991,7 @@ public final class CalendarPanelView: NSView {
                 scrollView.isHidden = true
                 switch dayMode {
                 case .classes:
-                    emptyStateLabel.stringValue = "No upcoming classes scheduled"
+                    emptyStateLabel.stringValue = "No classes scheduled for today"
                 case .today:
                     emptyStateLabel.stringValue = "No more events today"
                 case .tomorrow:

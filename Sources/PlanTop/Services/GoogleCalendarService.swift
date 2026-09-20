@@ -345,15 +345,14 @@ public final class GoogleCalendarService: ObservableObject {
             let ekTomorrow = self.eventStore.events(matching: tomorrowPred)
             let mappedTomorrow = self.mapEvents(ekTomorrow)
             
-            // 3. Query Classes (30-day window from startOfToday)
-            let endOfClassesWindow = calendar.date(byAdding: .day, value: 30, to: startOfToday) ?? endOfTomorrow
-            let classesPred = self.eventStore.predicateForEvents(withStart: startOfToday, end: endOfClassesWindow, calendars: calendarsToQuery)
+            // 3. Query Classes (Only for the day - startOfToday to endOfToday)
+            let classesPred = self.eventStore.predicateForEvents(withStart: startOfToday, end: endOfToday, calendars: calendarsToQuery)
             let ekClasses = self.eventStore.events(matching: classesPred)
             let mappedClasses = self.mapEvents(ekClasses)
             
-            // Separate Classes & Alfatih events from general agenda (excluding dismissed events)
+            // Separate Classes & Alfatih events for today only (excluding dismissed events)
             let classesList = self.applyCustomOrder(
-                mappedClasses.filter { $0.isClassOrAlfatih && !$0.isPast && !self.dismissedEventIds.contains($0.id) },
+                mappedClasses.filter { $0.isClassOrAlfatih && $0.startDate >= startOfToday && $0.startDate < startOfTomorrow && !self.dismissedEventIds.contains($0.id) },
                 forMode: .classes
             )
             let todayFiltered = self.applyCustomOrder(
@@ -493,7 +492,7 @@ public final class GoogleCalendarService: ObservableObject {
                         sourceAccount: targetEmail
                     )
                     
-                    if event.isClassOrAlfatih && event.endDate >= startOfToday {
+                    if event.isClassOrAlfatih && (start >= startOfToday && start < startOfTomorrow) {
                         classes.append(event)
                     }
                     

@@ -180,10 +180,26 @@ struct CalendarEventTestsRunner {
         }
         assertEqual(reorderedList.map { $0.id }, ["C", "A", "B"], "Custom reordering sorts cards according to user preference")
         
-        // Dismiss event A
-        let dismissedIds: Set<String> = ["A"]
-        let remainingList = reorderedList.filter { !dismissedIds.contains($0.id) }
-        assertEqual(remainingList.map { $0.id }, ["C", "B"], "Dismissed events are filtered out from schedule")
+        // Test 10: Non-Classes Start Time Only vs Classes Full Range
+        let regularEvent = CalendarEvent(
+            id: "R1",
+            title: "Team Sync",
+            startDate: now.addingTimeInterval(1800),
+            endDate: now.addingTimeInterval(5400)
+        )
+        let startTimeOnly = regularEvent.formattedStartTime
+        assertTrue(!startTimeOnly.contains("–"), "Non-classes event formattedStartTime only shows start time, not end time")
+        assertTrue(startTimeOnly.contains("AM") || startTimeOnly.contains("PM") || startTimeOnly.contains(":"), "formattedStartTime produces valid time format")
+
+        // Test 11: Classes Events restricted to Today only
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: now)
+        let endOfToday = cal.date(byAdding: .day, value: 1, to: startOfToday)!
+        let classToday = CalendarEvent(id: "CT", title: "IEL Writing Today", startDate: now.addingTimeInterval(1800), endDate: now.addingTimeInterval(5400))
+        let classTomorrow = CalendarEvent(id: "CX", title: "IEL Reading Tomorrow", startDate: now.addingTimeInterval(90000), endDate: now.addingTimeInterval(93600))
+        let mixedClasses = [classToday, classTomorrow]
+        let classesForDayOnly = mixedClasses.filter { $0.isClassOrAlfatih && $0.startDate >= startOfToday && $0.startDate < endOfToday }
+        assertEqual(classesForDayOnly.map { $0.id }, ["CT"], "Classes events are restricted strictly to today and exclude future class events")
 
         print("\n🎉 All PlanTop CalendarEvent tests passed successfully!")
     }

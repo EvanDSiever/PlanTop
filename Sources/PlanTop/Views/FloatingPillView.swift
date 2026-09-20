@@ -23,6 +23,88 @@ final class ResizeHandleView: NSView {
     }
 }
 
+// MARK: - Dedicated Clock Panel View (Full Width, Prominent Futuristic Display)
+public final class ClockPanelView: NeumorphicDepressedCardView {
+    override public var isFlipped: Bool { return true }
+    
+    private let timeLabel = NSTextField(labelWithString: "")
+    private let dateLabel = NSTextField(labelWithString: "")
+    
+    private let timeFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "h:mm a"
+        return df
+    }()
+    
+    private let dateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "EEEE, MMMM d, yyyy"
+        return df
+    }()
+    
+    override public init(frame frameRect: NSRect = .zero) {
+        super.init(frame: frameRect)
+        setupViews()
+        updateTime()
+    }
+    
+    required public init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupViews() {
+        cornerRadiusValue = 14
+        surfaceColor = NSColor.white
+        outlineWidth = 0.5
+        outlineColor = NeumorphicTheme.specularHighlightBorder
+        
+        // Large Futuristic Clock Label (Spans full width)
+        timeLabel.isBezeled = false
+        timeLabel.drawsBackground = false
+        timeLabel.isEditable = false
+        timeLabel.isSelectable = false
+        timeLabel.alignment = .center
+        timeLabel.textColor = NeumorphicTheme.accentColor
+        addSubview(timeLabel)
+        
+        // Full Formatted Date Label
+        dateLabel.isBezeled = false
+        dateLabel.drawsBackground = false
+        dateLabel.isEditable = false
+        dateLabel.isSelectable = false
+        dateLabel.alignment = .center
+        dateLabel.font = NeumorphicTheme.avenirFont(ofSize: 12.0, weight: .regular)
+        dateLabel.textColor = NeumorphicTheme.textSecondary
+        addSubview(dateLabel)
+    }
+    
+    public func updateTime() {
+        let now = Date()
+        timeLabel.stringValue = timeFormatter.string(from: now)
+        dateLabel.stringValue = dateFormatter.string(from: now)
+        needsLayout = true
+    }
+    
+    override public func layout() {
+        super.layout()
+        let w = bounds.width
+        let h = bounds.height
+        guard w > 0 && h > 0 else { return }
+        
+        // Dynamic font size taking full width
+        let timeFontSize: CGFloat = min(48, max(36, w * 0.135))
+        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: timeFontSize)
+        
+        let dateH: CGFloat = 16
+        let timeH: CGFloat = ceil(timeFontSize * 1.05)
+        let totalContentH = timeH + 2 + dateH
+        let topY = max(4, (h - totalContentH) / 2)
+        
+        timeLabel.frame = NSRect(x: 4, y: topY, width: max(0, w - 8), height: timeH)
+        dateLabel.frame = NSRect(x: 4, y: topY + timeH + 2, width: max(0, w - 8), height: dateH)
+    }
+}
+
 public final class FloatingPillView: NSView {
     private let clipContainer = NSView()
     private let masterPanel = NeumorphicPanelContainerView()
@@ -31,12 +113,14 @@ public final class FloatingPillView: NSView {
     // Header controls
     private let headerContainer = NSView()
     private let calendarIconView = NSImageView()
-    private let dateLabel = NSTextField(labelWithString: "")
-    private let timeLabel = NSTextField(labelWithString: "")
+    private let appTitleLabel = NSTextField(labelWithString: "PlanTop")
     private let syncButton = NSButton()
     private let settingsButton = NSButton()
     private let pinButton = NSButton()
     private let dismissButton = NSButton()
+    
+    // Dedicated Separate Clock Panel (Above Calendar Panel, Full Width)
+    private let clockPanel = ClockPanelView()
     
     // Calendar Panel with Neumorphic Switcher
     private let calendarPanel = CalendarPanelView(dayMode: .today)
@@ -63,16 +147,6 @@ public final class FloatingPillView: NSView {
     
     private var trackingArea: NSTrackingArea?
     private var timeTickerTimer: Timer?
-    private let dateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "EEEE, MMM d"
-        return df
-    }()
-    private let timeFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "h:mm a"
-        return df
-    }()
     
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -114,7 +188,7 @@ public final class FloatingPillView: NSView {
         masterPanel.panelBackgroundColor = NeumorphicTheme.masterBackground
         clipContainer.addSubview(masterPanel)
         
-        // Setup Header Container
+        // 1. Setup Header Container
         headerContainer.wantsLayer = true
         headerContainer.layer?.backgroundColor = NSColor.clear.cgColor
         masterPanel.contentView.addSubview(headerContainer)
@@ -125,24 +199,14 @@ public final class FloatingPillView: NSView {
         calendarIconView.contentTintColor = NeumorphicTheme.accentColor
         headerContainer.addSubview(calendarIconView)
         
-        // Date Label (Unbolded Avenir regular)
-        dateLabel.isBezeled = false
-        dateLabel.drawsBackground = false
-        dateLabel.isEditable = false
-        dateLabel.isSelectable = false
-        dateLabel.font = NeumorphicTheme.avenirFont(ofSize: 14.0, weight: .regular)
-        dateLabel.textColor = NeumorphicTheme.textPrimary
-        headerContainer.addSubview(dateLabel)
-        
-        // Live Clock (Futuristic accent font)
-        timeLabel.isBezeled = false
-        timeLabel.drawsBackground = false
-        timeLabel.isEditable = false
-        timeLabel.isSelectable = false
-        timeLabel.alignment = .right
-        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 16)
-        timeLabel.textColor = NeumorphicTheme.accentColor
-        headerContainer.addSubview(timeLabel)
+        // App Title Label (Unbolded Avenir medium)
+        appTitleLabel.isBezeled = false
+        appTitleLabel.drawsBackground = false
+        appTitleLabel.isEditable = false
+        appTitleLabel.isSelectable = false
+        appTitleLabel.font = NeumorphicTheme.avenirFont(ofSize: 13.5, weight: .medium)
+        appTitleLabel.textColor = NeumorphicTheme.textPrimary
+        headerContainer.addSubview(appTitleLabel)
         
         // Action Buttons
         configureIconButton(syncButton, symbol: "arrow.clockwise", tooltip: "Sync Google Calendar")
@@ -166,7 +230,10 @@ public final class FloatingPillView: NSView {
         dismissButton.action = #selector(dismissButtonClicked)
         headerContainer.addSubview(dismissButton)
         
-        // Integrated Calendar Panel
+        // 2. Separate Dedicated Clock Panel
+        masterPanel.contentView.addSubview(clockPanel)
+        
+        // 3. Integrated Calendar Panel
         calendarPanel.onHeightChanged = { [weak self] in
             self?.needsLayout = true
             self?.onHeightChanged?()
@@ -200,9 +267,9 @@ public final class FloatingPillView: NSView {
         clipContainer.addSubview(resizeHandle)
         
         // Setup Clock & Date Timer
-        updateClockAndDate()
+        clockPanel.updateTime()
         timeTickerTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateClockAndDate()
+            self?.clockPanel.updateTime()
         }
         if let timer = timeTickerTimer {
             RunLoop.current.add(timer, forMode: .common)
@@ -228,16 +295,7 @@ public final class FloatingPillView: NSView {
         pinButton.toolTip = isPinned ? "Unpin side panel (auto-retract)" : "Pin side panel permanently"
     }
     
-    private func updateClockAndDate() {
-        let now = Date()
-        dateLabel.stringValue = dateFormatter.string(from: now)
-        timeLabel.stringValue = timeFormatter.string(from: now)
-        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 16)
-        timeLabel.textColor = NeumorphicTheme.accentColor
-    }
-    
     @objc private func syncButtonClicked() {
-        // Spin animation feedback
         let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
         rotation.toValue = -Double.pi * 2
         rotation.duration = 0.6
@@ -262,8 +320,7 @@ public final class FloatingPillView: NSView {
     }
     
     @objc private func handleSettingsChanged() {
-        dateLabel.font = NeumorphicTheme.avenirFont(ofSize: 14.0, weight: .regular)
-        updateClockAndDate()
+        clockPanel.updateTime()
         updatePinButtonIcon()
         calendarPanel.reloadFromService()
         needsLayout = true
@@ -334,17 +391,19 @@ public final class FloatingPillView: NSView {
     public func calculateFittingSize() -> NSSize {
         let width = max(260, min(650, preferredPanelWidth))
         let panelW = max(200, width - 16)
-        let headerH: CGFloat = 46
+        let headerH: CGFloat = 30
+        let clockH: CGFloat = 74
         let calH = calendarPanel.calculateFittingHeight(forWidth: panelW)
         let screenMaxH: CGFloat = (NSScreen.main?.visibleFrame.height ?? 800) - 80
-        let totalH = min(screenMaxH, max(280, headerH + calH + 24))
+        let totalH = min(screenMaxH, max(340, headerH + clockH + calH + 36))
         return NSSize(width: width, height: totalH)
     }
     
     public func calculatePanelHeight(forWidth cardW: CGFloat) -> CGFloat {
-        let headerH: CGFloat = 46
+        let headerH: CGFloat = 30
+        let clockH: CGFloat = 74
         let calH = calendarPanel.calculateFittingHeight(forWidth: cardW)
-        return headerH + calH + 12
+        return headerH + clockH + calH + 36
     }
     
     public override func layout() {
@@ -365,9 +424,9 @@ public final class FloatingPillView: NSView {
         let cardW = panelW
         let cardH = panelH
         
-        // Header layout (Top of panel)
-        let headerH: CGFloat = 40
-        let headerY = cardH - headerH - 6
+        // 1. Header layout (Top of panel)
+        let headerH: CGFloat = 30
+        let headerY = cardH - headerH - 8
         headerContainer.frame = NSRect(x: 14, y: headerY, width: max(0, cardW - 28), height: headerH)
         
         // Buttons on right of header
@@ -382,21 +441,22 @@ public final class FloatingPillView: NSView {
         settingsButton.frame = NSRect(x: setX, y: (headerH - btnSize) / 2, width: btnSize, height: btnSize)
         syncButton.frame = NSRect(x: syncX, y: (headerH - btnSize) / 2, width: btnSize, height: btnSize)
         
-        // Icon and Date on left
+        // Icon and Title on left of header
         calendarIconView.frame = NSRect(x: 0, y: (headerH - 18) / 2, width: 18, height: 18)
+        let titleW = max(50, syncX - 26)
+        appTitleLabel.frame = NSRect(x: 24, y: (headerH - 18) / 2, width: titleW, height: 18)
         
-        let availableTextW = max(50, syncX - 26)
-        let dateW = min(120, availableTextW * 0.55)
-        let timeW = max(60, availableTextW - dateW - 8)
+        // 2. Separate Dedicated Clock Panel (above Calendar Panel, full width)
+        let clockH: CGFloat = 74
+        let clockY = headerY - clockH - 8
+        clockPanel.frame = NSRect(x: 14, y: clockY, width: max(0, cardW - 28), height: clockH)
         
-        dateLabel.frame = NSRect(x: 24, y: (headerH - 18) / 2, width: dateW, height: 18)
-        timeLabel.frame = NSRect(x: 24 + dateW + 4, y: (headerH - 18) / 2 - 1, width: timeW, height: 20)
-        
-        // Calendar panel occupies remaining space below header
-        let calH = max(0, headerY - 6)
+        // 3. Calendar panel occupies remaining space below clock panel
+        let calH = max(0, clockY - 6)
         calendarPanel.frame = NSRect(x: 0, y: 4, width: cardW, height: calH)
         
         resizeHandle.frame = NSRect(x: 0, y: 0, width: hPad + 14, height: bounds.height)
         window?.invalidateCursorRects(for: resizeHandle)
     }
 }
+
