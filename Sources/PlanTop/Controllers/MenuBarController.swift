@@ -177,6 +177,17 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         syncItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         menu.addItem(syncItem)
         
+        if !GoogleCalendarService.shared.dismissedEventIds.isEmpty {
+            let restoreItem = NSMenuItem(
+                title: "Restore Hidden Events (\(GoogleCalendarService.shared.dismissedEventIds.count))",
+                action: #selector(restoreHiddenEventsClicked),
+                keyEquivalent: ""
+            )
+            restoreItem.target = self
+            restoreItem.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: nil)
+            menu.addItem(restoreItem)
+        }
+        
         let slidePanelItem = NSMenuItem(title: "Toggle Side Panel", action: #selector(toggleSidePanelClicked), keyEquivalent: "p")
         slidePanelItem.target = self
         slidePanelItem.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: nil)
@@ -239,6 +250,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     @objc private func syncNowClicked() {
         GoogleCalendarService.shared.syncNow()
+        updateDisplay()
+    }
+    
+    @objc private func restoreHiddenEventsClicked() {
+        GoogleCalendarService.shared.restoreDismissedEvents()
         updateDisplay()
     }
     

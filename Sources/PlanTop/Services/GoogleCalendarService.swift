@@ -25,8 +25,13 @@ public final class GoogleCalendarService: ObservableObject {
     @Published public private(set) var classesEvents: [CalendarEvent] = []
     @Published public private(set) var todaysEvents: [CalendarEvent] = []
     @Published public private(set) var tomorrowsEvents: [CalendarEvent] = []
+    @Published public private(set) var dismissedEventIds: Set<String> = []
     @Published public private(set) var syncStatus: CalendarSyncStatus = .idle
     @Published public private(set) var lastSyncDate: Date?
+    
+    private var customOrderClasses: [String] = []
+    private var customOrderToday: [String] = []
+    private var customOrderTomorrow: [String] = []
     
     public let targetEmail: String = "evandsiever@gmail.com"
     
@@ -86,6 +91,13 @@ public final class GoogleCalendarService: ObservableObject {
         self.isTomorrowExpanded = UserDefaults.standard.object(forKey: "isTomorrowCalendarExpanded") != nil
             ? UserDefaults.standard.bool(forKey: "isTomorrowCalendarExpanded")
             : true
+        
+        if let dismissed = UserDefaults.standard.stringArray(forKey: "plantop_dismissed_event_ids") {
+            self.dismissedEventIds = Set(dismissed)
+        }
+        self.customOrderClasses = UserDefaults.standard.stringArray(forKey: "plantop_order_classes") ?? []
+        self.customOrderToday = UserDefaults.standard.stringArray(forKey: "plantop_order_today") ?? []
+        self.customOrderTomorrow = UserDefaults.standard.stringArray(forKey: "plantop_order_tomorrow") ?? []
         
         setupObservers()
         startLiveSync()
@@ -148,11 +160,62 @@ public final class GoogleCalendarService: ObservableObject {
         }
     }
     
+    public func dismissEvent(id: String) {
+        dismissedEventIds.insert(id)
+        UserDefaults.standard.set(Array(dismissedEventIds), forKey: "plantop_dismissed_event_ids")
+        classesEvents.removeAll { $0.id == id }
+        todaysEvents.removeAll { $0.id == id }
+        tomorrowsEvents.removeAll { $0.id == id }
+        NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
+    }
+    
+    public func restoreDismissedEvents() {
+        dismissedEventIds.removeAll()
+        UserDefaults.standard.removeObject(forKey: "plantop_dismissed_event_ids")
+        refresh()
+    }
+    
+    public func saveCustomOrder(eventIds: [String], forMode mode: CalendarDayMode) {
+        switch mode {
+        case .classes:
+            self.customOrderClasses = eventIds
+            UserDefaults.standard.set(eventIds, forKey: "plantop_order_classes")
+        case .today:
+            self.customOrderToday = eventIds
+            UserDefaults.standard.set(eventIds, forKey: "plantop_order_today")
+        case .tomorrow:
+            self.customOrderTomorrow = eventIds
+            UserDefaults.standard.set(eventIds, forKey: "plantop_order_tomorrow")
+        }
+    }
+    
+    public func applyCustomOrder(_ list: [CalendarEvent], forMode mode: CalendarDayMode) -> [CalendarEvent] {
+        let order: [String]
+        switch mode {
+        case .classes: order = customOrderClasses
+        case .today: order = customOrderToday
+        case .tomorrow: order = customOrderTomorrow
+        }
+        guard !order.isEmpty else { return list }
+        var map = [String: Int]()
+        for (i, id) in order.enumerated() {
+            map[id] = i
+        }
+        return list.sorted {
+            let rank0 = map[$0.id] ?? (10000 + abs($0.startDate.timeIntervalSince1970.hashValue % 10000))
+            let rank1 = map[$1.id] ?? (10000 + abs($1.startDate.timeIntervalSince1970.hashValue % 10000))
+            if rank0 != rank1 {
+                return rank0 < rank1
+            }
+            return $0.startDate < $1.startDate
+        }
+    }
+    
     public func setTestEvents(classes: [CalendarEvent], today: [CalendarEvent], tomorrow: [CalendarEvent]) {
-        self.classesEvents = classes
-        self.todaysEvents = today
-        self.tomorrowsEvents = tomorrow
-        self.syncStatus = .synced(Date(), todayCount: today.count + classes.count, tomorrowCount: tomorrow.count)
+        self.classesEvents = classes.filter { !dismissedEventIds.contains($0.id) }
+        self.todaysEvents = today.filter { !dismissedEventIds.contains($0.id) }
+        self.tomorrowsEvents = tomorrow.filter { !dismissedEventIds.contains($0.id) }
+        self.syncStatus = .synced(Date(), todayCount: todaysEvents.count + classesEvents.count, tomorrowCount: tomorrowsEvents.count)
         NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
     }
     
@@ -288,10 +351,19 @@ public final class GoogleCalendarService: ObservableObject {
             let ekClasses = self.eventStore.events(matching: classesPred)
             let mappedClasses = self.mapEvents(ekClasses)
             
-            // Separate Classes & Alfatih events from general agenda
-            let classesList = mappedClasses.filter { $0.isClassOrAlfatih && !$0.isPast }.sorted { $0.startDate < $1.startDate }
-            let todayFiltered = mappedToday.filter { !$0.isClassOrAlfatih }
-            let tomorrowFiltered = mappedTomorrow.filter { !$0.isClassOrAlfatih }
+            // Separate Classes & Alfatih events from general agenda (excluding dismissed events)
+            let classesList = self.applyCustomOrder(
+                mappedClasses.filter { $0.isClassOrAlfatih && !$0.isPast && !self.dismissedEventIds.contains($0.id) },
+                forMode: .classes
+            )
+            let todayFiltered = self.applyCustomOrder(
+                mappedToday.filter { !$0.isClassOrAlfatih && !self.dismissedEventIds.contains($0.id) },
+                forMode: .today
+            )
+            let tomorrowFiltered = self.applyCustomOrder(
+                mappedTomorrow.filter { !$0.isClassOrAlfatih && !self.dismissedEventIds.contains($0.id) },
+                forMode: .tomorrow
+            )
             
             DispatchQueue.main.async {
                 NSLog("[PlanTop-Calendar] fetchEvents: %ld classes, %ld today, %ld tomorrow", classesList.count, todayFiltered.count, tomorrowFiltered.count)
@@ -456,9 +528,9 @@ public final class GoogleCalendarService: ObservableObject {
         }
         
         return (
-            today.sorted { $0.startDate < $1.startDate },
-            tomorrow.sorted { $0.startDate < $1.startDate },
-            classes.sorted { $0.startDate < $1.startDate }
+            applyCustomOrder(today.filter { !dismissedEventIds.contains($0.id) }, forMode: .today),
+            applyCustomOrder(tomorrow.filter { !dismissedEventIds.contains($0.id) }, forMode: .tomorrow),
+            applyCustomOrder(classes.filter { !dismissedEventIds.contains($0.id) }, forMode: .classes)
         )
     }
     

@@ -96,9 +96,9 @@ public struct NeumorphicTheme {
         return avenirFont(ofSize: size, weight: weight)
     }
     
-    /// Dedicated monospaced numeric font for ticking timers to prevent digit jitter
-    public static func timerFont(ofSize size: CGFloat, weight: NSFont.Weight = .semibold) -> NSFont {
-        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+    /// Dedicated futuristic font for live timers and clocks
+    public static func timerFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        return futuristicTimeFont(ofSize: size)
     }
     
     /// Primary text - Modern slate charcoal (#0F172A)
@@ -165,10 +165,13 @@ public struct NeumorphicTheme {
         if let font = NSFont(name: "AlienLeague", size: size) {
             return font
         }
-        if let font = NSFont(name: "Futura-CondensedLight", size: size) {
+        if let font = NSFont(name: "Futura-CondensedMedium", size: size) {
             return font
         }
-        return NSFont.systemFont(ofSize: size, weight: .ultraLight)
+        if let font = NSFont(name: "Futura-Medium", size: size) {
+            return font
+        }
+        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
     }
     
     // MARK: - Plain Text Shadows (Completely zeroed for razor-sharp typography)

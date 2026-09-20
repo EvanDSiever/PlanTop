@@ -125,12 +125,12 @@ public final class FloatingPillView: NSView {
         calendarIconView.contentTintColor = NeumorphicTheme.accentColor
         headerContainer.addSubview(calendarIconView)
         
-        // Date Label
+        // Date Label (Unbolded Avenir regular)
         dateLabel.isBezeled = false
         dateLabel.drawsBackground = false
         dateLabel.isEditable = false
         dateLabel.isSelectable = false
-        dateLabel.font = NeumorphicTheme.roundedFont(ofSize: 13, weight: .bold)
+        dateLabel.font = NeumorphicTheme.avenirFont(ofSize: 14.0, weight: .regular)
         dateLabel.textColor = NeumorphicTheme.textPrimary
         headerContainer.addSubview(dateLabel)
         
@@ -140,7 +140,7 @@ public final class FloatingPillView: NSView {
         timeLabel.isEditable = false
         timeLabel.isSelectable = false
         timeLabel.alignment = .right
-        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 15)
+        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 16)
         timeLabel.textColor = NeumorphicTheme.accentColor
         headerContainer.addSubview(timeLabel)
         
@@ -232,7 +232,7 @@ public final class FloatingPillView: NSView {
         let now = Date()
         dateLabel.stringValue = dateFormatter.string(from: now)
         timeLabel.stringValue = timeFormatter.string(from: now)
-        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 15)
+        timeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 16)
         timeLabel.textColor = NeumorphicTheme.accentColor
     }
     
@@ -262,7 +262,7 @@ public final class FloatingPillView: NSView {
     }
     
     @objc private func handleSettingsChanged() {
-        dateLabel.font = NeumorphicTheme.roundedFont(ofSize: 13, weight: .bold)
+        dateLabel.font = NeumorphicTheme.avenirFont(ofSize: 14.0, weight: .regular)
         updateClockAndDate()
         updatePinButtonIcon()
         calendarPanel.reloadFromService()

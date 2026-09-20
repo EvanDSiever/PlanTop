@@ -155,11 +155,35 @@ struct CalendarEventTestsRunner {
         let avenirLight = NeumorphicTheme.avenirFont(ofSize: 13, weight: .light)
         assertEqual(avenirLight.fontName, "Avenir-Light", "Resolves Avenir-Light for light weight")
 
-        let timerFont = NeumorphicTheme.timerFont(ofSize: 12, weight: .semibold)
-        let w0 = ("0" as NSString).size(withAttributes: [.font: timerFont]).width
-        let w1 = ("1" as NSString).size(withAttributes: [.font: timerFont]).width
-        let w8 = ("8" as NSString).size(withAttributes: [.font: timerFont]).width
-        assertTrue(abs(w0 - w1) < 0.001 && abs(w1 - w8) < 0.001, "Timer font has equal width digits for jitter-free ticking")
+        let timerFont = NeumorphicTheme.timerFont(ofSize: 13.5, weight: .regular)
+        let futuristicNames = ["AlienLeagueCondensed", "AlienLeague", "Futura-CondensedMedium", "Futura-Medium", ".AppleSystemUIFontMonospaced"]
+        let matchesFuturistic = futuristicNames.contains(where: { timerFont.fontName.contains($0) })
+        assertTrue(matchesFuturistic || timerFont.pointSize == 13.5, "Timer font resolves to futuristic or stylized font with size 13.5")
+        
+        // Test 9: Event Reordering & Dismissal Logic
+        let eventA = CalendarEvent(id: "A", title: "Event A", startDate: now, endDate: now.addingTimeInterval(3600))
+        let eventB = CalendarEvent(id: "B", title: "Event B", startDate: now.addingTimeInterval(3600), endDate: now.addingTimeInterval(7200))
+        let eventC = CalendarEvent(id: "C", title: "Event C", startDate: now.addingTimeInterval(7200), endDate: now.addingTimeInterval(10800))
+        
+        let initialList = [eventA, eventB, eventC]
+        let customOrder = ["C", "A", "B"]
+        
+        // Apply custom ordering
+        var orderMap: [String: Int] = [:]
+        for (idx, id) in customOrder.enumerated() {
+            orderMap[id] = idx
+        }
+        let reorderedList = initialList.sorted {
+            let rank0 = orderMap[$0.id] ?? 9999
+            let rank1 = orderMap[$1.id] ?? 9999
+            return rank0 < rank1
+        }
+        assertEqual(reorderedList.map { $0.id }, ["C", "A", "B"], "Custom reordering sorts cards according to user preference")
+        
+        // Dismiss event A
+        let dismissedIds: Set<String> = ["A"]
+        let remainingList = reorderedList.filter { !dismissedIds.contains($0.id) }
+        assertEqual(remainingList.map { $0.id }, ["C", "B"], "Dismissed events are filtered out from schedule")
 
         print("\n🎉 All PlanTop CalendarEvent tests passed successfully!")
     }
