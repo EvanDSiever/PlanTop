@@ -246,7 +246,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         if pillController.isDroppedDown {
             pillController.retract()
         } else {
-            pillController.dropDown()
+            pillController.dropDown(manually: true)
         }
     }
     

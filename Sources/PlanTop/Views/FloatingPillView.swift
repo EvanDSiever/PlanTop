@@ -36,6 +36,7 @@ public final class FloatingPillView: NSView {
     private let syncButton = NSButton()
     private let settingsButton = NSButton()
     private let pinButton = NSButton()
+    private let dismissButton = NSButton()
     
     // Calendar Panel with Neumorphic Switcher
     private let calendarPanel = CalendarPanelView(dayMode: .today)
@@ -103,7 +104,9 @@ public final class FloatingPillView: NSView {
         // Clip container masks the drawer sliding in from the right edge
         clipContainer.wantsLayer = true
         clipContainer.layer?.backgroundColor = NSColor.clear.cgColor
-        clipContainer.layer?.masksToBounds = false
+        clipContainer.layer?.cornerRadius = 20
+        clipContainer.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        clipContainer.layer?.masksToBounds = true
         addSubview(clipContainer)
         
         // Master Neumorphic Ceramic Slab Container
@@ -157,6 +160,11 @@ public final class FloatingPillView: NSView {
         pinButton.action = #selector(pinButtonClicked)
         headerContainer.addSubview(pinButton)
         updatePinButtonIcon()
+        
+        configureIconButton(dismissButton, symbol: "xmark", tooltip: "Close Side Panel")
+        dismissButton.target = self
+        dismissButton.action = #selector(dismissButtonClicked)
+        headerContainer.addSubview(dismissButton)
         
         // Integrated Calendar Panel
         calendarPanel.onHeightChanged = { [weak self] in
@@ -247,6 +255,10 @@ public final class FloatingPillView: NSView {
     
     @objc private func pinButtonClicked() {
         onTogglePin?()
+    }
+    
+    @objc private func dismissButtonClicked() {
+        onDismiss?()
     }
     
     @objc private func handleSettingsChanged() {
@@ -346,10 +358,12 @@ public final class FloatingPillView: NSView {
         let panelW = max(260, b.width - hPad)
         let panelH = b.height - (vPad * 2)
         
-        masterPanel.frame = NSRect(x: hPad, y: vPad, width: panelW, height: panelH)
+        let targetX = isStretchedOut ? hPad : b.width
+        masterPanel.frame = NSRect(x: targetX, y: vPad, width: panelW, height: panelH)
+        masterPanel.layoutSubtreeIfNeeded()
         
-        let cardW = masterPanel.contentView.bounds.width
-        let cardH = masterPanel.contentView.bounds.height
+        let cardW = panelW
+        let cardH = panelH
         
         // Header layout (Top of panel)
         let headerH: CGFloat = 40
@@ -358,10 +372,12 @@ public final class FloatingPillView: NSView {
         
         // Buttons on right of header
         let btnSize: CGFloat = 26
-        let pinX = headerContainer.bounds.width - btnSize
+        let closeX = headerContainer.bounds.width - btnSize
+        let pinX = closeX - btnSize - 4
         let setX = pinX - btnSize - 4
         let syncX = setX - btnSize - 4
         
+        dismissButton.frame = NSRect(x: closeX, y: (headerH - btnSize) / 2, width: btnSize, height: btnSize)
         pinButton.frame = NSRect(x: pinX, y: (headerH - btnSize) / 2, width: btnSize, height: btnSize)
         settingsButton.frame = NSRect(x: setX, y: (headerH - btnSize) / 2, width: btnSize, height: btnSize)
         syncButton.frame = NSRect(x: syncX, y: (headerH - btnSize) / 2, width: btnSize, height: btnSize)

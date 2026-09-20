@@ -1037,13 +1037,22 @@ public final class CalendarPanelView: NSView {
         
         let status = GoogleCalendarService.shared.syncStatus
         if status == .needsPermission || status == .unauthorized {
+            permissionContainer.isHidden = false
+            emptyStateLabel.isHidden = true
+            scrollView.isHidden = true
             permissionContainer.frame = NSRect(x: 14, y: contentY, width: max(10, w - 28), height: contentHeight)
             permissionLabel.frame = NSRect(x: 10, y: contentHeight - 24, width: permissionContainer.frame.width - 20, height: 16)
             grantAccessButton.frame = NSRect(x: (permissionContainer.frame.width / 2) - 95, y: 6, width: 90, height: 22)
             openSettingsButton.frame = NSRect(x: (permissionContainer.frame.width / 2) + 5, y: 6, width: 100, height: 22)
         } else if events.isEmpty {
+            permissionContainer.isHidden = true
+            emptyStateLabel.isHidden = false
+            scrollView.isHidden = true
             emptyStateLabel.frame = NSRect(x: 14, y: contentY, width: max(10, w - 28), height: contentHeight)
         } else {
+            permissionContainer.isHidden = true
+            emptyStateLabel.isHidden = true
+            scrollView.isHidden = false
             scrollView.frame = NSRect(x: 14, y: contentY, width: max(10, w - 28), height: contentHeight)
             let stackWidth = scrollView.frame.width
             let cardPad: CGFloat = 4

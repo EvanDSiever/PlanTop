@@ -28,6 +28,7 @@ public final class FloatingPillWindowController: NSObject {
     public private(set) var isGuidePinned: Bool = false
     
     public private(set) var isDroppedDown: Bool = false
+    public private(set) var isManuallyOpened: Bool = false
     private var isHoveringActive: Bool = false
     
     public var onOpenSettings: (() -> Void)?
@@ -251,7 +252,7 @@ public final class FloatingPillWindowController: NSObject {
     
     private func checkMousePosition() {
         guard isEnabled else { return }
-        if isPinned { return }
+        if isPinned || isManuallyOpened { return }
         
         let mouseLoc = NSEvent.mouseLocation
         
@@ -374,7 +375,7 @@ public final class FloatingPillWindowController: NSObject {
         }
         
         guidePanel?.alphaValue = 1.0
-        guidePanel?.orderFront(nil)
+        guidePanel?.orderFrontRegardless()
         
         guideHideTimer?.invalidate()
         if !pinned {
@@ -493,7 +494,10 @@ public final class FloatingPillWindowController: NSObject {
         return (panel, pv)
     }
     
-    public func dropDown() {
+    public func dropDown(manually: Bool = false) {
+        if manually {
+            isManuallyOpened = true
+        }
         guard let screen = NSScreen.main else { return }
         let (panel, pv) = setupPillPanel()
         
@@ -517,7 +521,7 @@ public final class FloatingPillWindowController: NSObject {
         
         panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
         panel.alphaValue = 1.0
-        panel.orderFront(nil)
+        panel.orderFrontRegardless()
         
         if !wasDropped || !pv.isStretchedOut {
             pv.stretchOut(animated: true)
@@ -525,6 +529,7 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     public func retract(immediately: Bool = false) {
+        isManuallyOpened = false
         if isPinned && !immediately {
             return
         }

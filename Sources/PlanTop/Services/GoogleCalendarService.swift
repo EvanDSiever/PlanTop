@@ -148,6 +148,14 @@ public final class GoogleCalendarService: ObservableObject {
         }
     }
     
+    public func setTestEvents(classes: [CalendarEvent], today: [CalendarEvent], tomorrow: [CalendarEvent]) {
+        self.classesEvents = classes
+        self.todaysEvents = today
+        self.tomorrowsEvents = tomorrow
+        self.syncStatus = .synced(Date(), todayCount: today.count + classes.count, tomorrowCount: tomorrow.count)
+        NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
+    }
+    
     public func refresh() {
         guard isCalendarEnabled else { return }
         
