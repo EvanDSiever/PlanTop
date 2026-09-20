@@ -35,14 +35,26 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
     
     public var dayMode: CalendarDayMode = .today
     
+    // Collapsed card height constant
+    public static let collapsedCardHeight: CGFloat = 70
+    
     // Header elements:
-    // Row 1: Left = titleLabel, Right = timeRangeLabel, Rightmost = removeButton (fades in on hover)
-    // Row 2: Left = timerBadgeLabel (underneath title), Right = expandChevron
+    // Left: titleClipView containing titleLabel (slides on hover if title overflows)
+    // Left row 2: timerBadgeLabel (countdown timer) + expandChevron
+    // Right: timeRangeLabel (prominent futuristic time display spanning almost container height)
+    // Far right: removeButton (fades in on hover)
+    private let titleClipView = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let timeRangeLabel = NSTextField(labelWithString: "")
     private let timerBadgeLabel = NSTextField(labelWithString: "")
     private let expandChevron = NSImageView()
     private let removeButton = NSButton()
+    
+    // Title marquee sliding on hover
+    private var isTitleOverflowing: Bool = false
+    private var titleOverflowAmount: CGFloat = 0.0
+    private var isMouseInside: Bool = false
+    private var titleSlideWorkItem: DispatchWorkItem?
     
     // Hover tracking
     private var trackingArea: NSTrackingArea?
@@ -81,25 +93,30 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         layer?.masksToBounds = false
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         
-        // 1. Collapsed Title Label (Avenir regular, enlarged, not bolded)
+        // 1. Collapsed Title Clipping View & Label (Avenir regular, smooth hover-slide)
+        titleClipView.wantsLayer = true
+        titleClipView.layer?.masksToBounds = true
+        
+        titleLabel.wantsLayer = true
         titleLabel.isBezeled = false
         titleLabel.drawsBackground = false
         titleLabel.isEditable = false
         titleLabel.isSelectable = false
         titleLabel.font = NeumorphicTheme.avenirFont(ofSize: 15.0, weight: .regular)
         titleLabel.textColor = NeumorphicTheme.textPrimary
-        titleLabel.lineBreakMode = .byTruncatingTail
-        addSubview(titleLabel)
+        titleLabel.lineBreakMode = .byClipping
+        titleClipView.addSubview(titleLabel)
+        addSubview(titleClipView)
         
-        // 2. Event Time Label (Row 1 Right side, futuristic font)
+        // 2. Event Time Label (Prominent futuristic time display spanning almost container height)
         timeRangeLabel.isBezeled = false
         timeRangeLabel.drawsBackground = false
         timeRangeLabel.isEditable = false
         timeRangeLabel.isSelectable = false
         timeRangeLabel.alignment = .right
-        timeRangeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 13.5)
+        timeRangeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 38.0)
         timeRangeLabel.textColor = NeumorphicTheme.accentColor
-        timeRangeLabel.lineBreakMode = .byTruncatingTail
+        timeRangeLabel.lineBreakMode = .byClipping
         addSubview(timeRangeLabel)
         
         // 3. Remove Button (Fades in on hover on right edge)
@@ -362,18 +379,85 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
     
     public override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        isMouseInside = true
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             self.removeButton.animator().alphaValue = 1.0
         }
+        startTitleSlideAnimation()
     }
     
     public override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        isMouseInside = false
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             self.removeButton.animator().alphaValue = 0.0
         }
+        stopTitleSlideAnimation()
+    }
+    
+    private func startTitleSlideAnimation() {
+        titleSlideWorkItem?.cancel()
+        titleSlideWorkItem = nil
+        
+        guard isTitleOverflowing else { return }
+        
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isMouseInside, self.isTitleOverflowing else { return }
+            self.performTitleSlide()
+        }
+        titleSlideWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+    
+    private func stopTitleSlideAnimation() {
+        titleSlideWorkItem?.cancel()
+        titleSlideWorkItem = nil
+        
+        if isTitleOverflowing {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.30
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                self.titleLabel.animator().frame.origin.x = 0
+            }
+        }
+    }
+    
+    private func performTitleSlide() {
+        guard isMouseInside, isTitleOverflowing else { return }
+        let targetX = -(titleOverflowAmount + 8)
+        let duration = max(1.0, min(3.5, Double(titleOverflowAmount) / 40.0))
+        
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = duration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            self.titleLabel.animator().frame.origin.x = targetX
+        }, completionHandler: { [weak self] in
+            guard let self = self, self.isMouseInside else { return }
+            let pauseWork = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isMouseInside else { return }
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.50
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    self.titleLabel.animator().frame.origin.x = 0
+                }, completionHandler: { [weak self] in
+                    guard let self = self, self.isMouseInside else { return }
+                    let loopWork = DispatchWorkItem { [weak self] in
+                        guard let self = self, self.isMouseInside else { return }
+                        self.performTitleSlide()
+                    }
+                    self.titleSlideWorkItem = loopWork
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: loopWork)
+                })
+            }
+            self.titleSlideWorkItem = pauseWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: pauseWork)
+        })
+    }
+    
+    deinit {
+        titleSlideWorkItem?.cancel()
     }
     
     @objc private func handleRemoveClicked() {
@@ -418,6 +502,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         if !isDraggingCard && (abs(dy) > 4 || abs(dx) > 4) {
             isDraggingCard = true
             hasTriggeredDragStart = true
+            stopTitleSlideAnimation()
             onDragStart?(self)
         }
         
@@ -472,7 +557,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
     
     public static func height(for event: CalendarEvent, isExpanded: Bool, width: CGFloat) -> CGFloat {
         if !isExpanded {
-            return 68
+            return collapsedCardHeight
         }
         let casingPad: CGFloat = 8
         let innerW = max(100, width - (casingPad * 2) - 24)
@@ -503,7 +588,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         // 4. Buttons (height 32pt)
         casingContentH += 32 + 12
         
-        let totalH = 68 + casingContentH + 10
+        let totalH = collapsedCardHeight + casingContentH + 10
         return totalH
     }
     
@@ -513,41 +598,108 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
     }
     
     public func updateWidth(_ width: CGFloat) {
-        // Row 1: Left = titleLabel, Right = timeRangeLabel, Rightmost = removeButton (fades in on hover)
+        // Far Right: removeButton (fades in on hover, vertically centered on right edge)
         let removeBtnSize: CGFloat = 18
         let removeBtnX = max(10, width - removeBtnSize - 12)
-        removeButton.frame = NSRect(x: removeBtnX, y: 11, width: removeBtnSize, height: removeBtnSize)
+        let removeBtnY = (CalendarEventCardView.collapsedCardHeight - removeBtnSize) / 2
+        removeButton.frame = NSRect(x: removeBtnX, y: removeBtnY, width: removeBtnSize, height: removeBtnSize)
         
+        // Right side: Event Time Label (Almost as high as container, ~48-52pt tall)
         let isClasses = (dayMode == .classes)
-        let timeRangeStr = isClasses ? event.fullTimeRangeString(includeDay: false) : event.formattedStartTime
-        timeRangeLabel.stringValue = timeRangeStr
-        let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 13.5)
-        timeRangeLabel.font = timeFont
-        let timeStrSize = (timeRangeStr as NSString).size(withAttributes: [.font: timeFont])
-        let timeRangeW = min(160, ceil(timeStrSize.width) + 6)
+        let timeLabelH: CGFloat = 52
+        let timeLabelY = (CalendarEventCardView.collapsedCardHeight - timeLabelH) / 2
+        
+        let timeTextColor: NSColor
+        if event.isPast {
+            timeTextColor = NeumorphicTheme.textTertiary
+        } else if event.isHappeningNow {
+            timeTextColor = NeumorphicTheme.coralAccent
+        } else {
+            timeTextColor = NeumorphicTheme.accentColor
+        }
+        
+        let timeRangeW: CGFloat
+        if isClasses && !event.isAllDay && event.startDate != event.endDate {
+            // Classes category: stacked start and end times to span almost the full card height
+            let timeFmt = DateFormatter()
+            timeFmt.timeStyle = .short
+            let s = timeFmt.string(from: event.startDate)
+            let e = timeFmt.string(from: event.endDate)
+            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 21.0)
+            let pStyle = NSMutableParagraphStyle()
+            pStyle.alignment = .right
+            pStyle.lineSpacing = 1
+            pStyle.maximumLineHeight = 23
+            pStyle.minimumLineHeight = 23
+            let attr = NSMutableAttributedString()
+            attr.append(NSAttributedString(string: "\(s)\n– \(e)", attributes: [
+                .font: timeFont,
+                .foregroundColor: timeTextColor,
+                .paragraphStyle: pStyle
+            ]))
+            timeRangeLabel.attributedStringValue = attr
+            let timeStrSize = attr.size()
+            timeRangeW = min(max(70, width * 0.45), ceil(timeStrSize.width) + 8)
+        } else {
+            // Non-classes or all-day: prominent futuristic font spanning almost the full card height
+            let timeRangeStr = isClasses ? event.fullTimeRangeString(includeDay: false) : event.formattedStartTime
+            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 38.0)
+            let pStyle = NSMutableParagraphStyle()
+            pStyle.alignment = .right
+            let attr = NSAttributedString(string: timeRangeStr, attributes: [
+                .font: timeFont,
+                .foregroundColor: timeTextColor,
+                .paragraphStyle: pStyle
+            ])
+            timeRangeLabel.attributedStringValue = attr
+            let timeStrSize = attr.size()
+            timeRangeW = min(max(80, width * 0.50), ceil(timeStrSize.width) + 8)
+        }
+        
         let timeRangeX = max(10, removeBtnX - timeRangeW - 6)
-        timeRangeLabel.frame = NSRect(x: timeRangeX, y: 11, width: timeRangeW, height: 20)
+        timeRangeLabel.frame = NSRect(x: timeRangeX, y: timeLabelY, width: timeRangeW, height: timeLabelH)
         
-        let titleW = max(30, timeRangeX - 14 - 8)
-        titleLabel.frame = NSRect(x: 14, y: 9, width: titleW, height: 22)
+        // Row 1: Left = titleClipView containing titleLabel (slides on hover if title overflows)
+        let titleAvailableW = max(30, timeRangeX - 14 - 10)
+        let titleFont = NeumorphicTheme.avenirFont(ofSize: 15.0, weight: .regular)
+        titleLabel.font = titleFont
+        titleLabel.stringValue = event.title
+        let fullTitleSize = (event.title as NSString).size(withAttributes: [.font: titleFont])
+        let fullTitleW = ceil(fullTitleSize.width) + 6
         
-        // Row 2: Left = timerBadgeLabel underneath title, Right = expandChevron
-        let chevSize: CGFloat = 12
-        let chevX = max(10, width - chevSize - 15)
-        expandChevron.frame = NSRect(x: chevX, y: 39, width: chevSize, height: chevSize)
+        titleClipView.frame = NSRect(x: 14, y: 11, width: titleAvailableW, height: 24)
         
+        if fullTitleW > titleAvailableW {
+            isTitleOverflowing = true
+            titleOverflowAmount = fullTitleW - titleAvailableW
+            titleLabel.frame = NSRect(x: 0, y: 0, width: fullTitleW, height: 24)
+        } else {
+            isTitleOverflowing = false
+            titleOverflowAmount = 0
+            titleLabel.frame = NSRect(x: 0, y: 0, width: titleAvailableW, height: 24)
+        }
+        if !isMouseInside {
+            titleLabel.frame.origin.x = 0
+        }
+        
+        // Row 2: Left = timerBadgeLabel underneath title, Right of timer = expandChevron
         let timerAttr = timerAttributedString()
         timerBadgeLabel.attributedStringValue = timerAttr
         let timerSize = timerAttr.size()
-        let timerW = max(50, min(chevX - 14 - 8, ceil(timerSize.width) + 8))
-        timerBadgeLabel.frame = NSRect(x: 14, y: 36, width: timerW, height: 20)
+        let maxTimerW = max(40, timeRangeX - 14 - 24)
+        let timerW = min(maxTimerW, ceil(timerSize.width) + 4)
+        timerBadgeLabel.frame = NSRect(x: 14, y: 40, width: timerW, height: 20)
+        
+        let chevSize: CGFloat = 11
+        let chevX = min(timeRangeX - chevSize - 6, timerBadgeLabel.frame.maxX + 6)
+        expandChevron.frame = NSRect(x: chevX, y: 44, width: chevSize, height: chevSize)
         
         if isExpanded {
             let targetCardH = CalendarEventCardView.height(for: event, isExpanded: true, width: width)
             let casingPad: CGFloat = 8
             let casingW = max(100, width - (casingPad * 2))
-            let casingH = max(10, targetCardH - 68 - 10)
-            detailCasing.frame = NSRect(x: casingPad, y: 68, width: casingW, height: casingH)
+            let casingH = max(10, targetCardH - CalendarEventCardView.collapsedCardHeight - 10)
+            detailCasing.frame = NSRect(x: casingPad, y: CalendarEventCardView.collapsedCardHeight, width: casingW, height: casingH)
             
             let innerW = max(80, casingW - 24)
             var curY: CGFloat = 12
@@ -591,19 +743,13 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         
         if isPast {
             titleLabel.textColor = NeumorphicTheme.textTertiary
-            timeRangeLabel.textColor = NeumorphicTheme.textTertiary
         } else if isHappeningNow {
             titleLabel.textColor = NeumorphicTheme.coralAccent
-            timeRangeLabel.textColor = NeumorphicTheme.coralAccent
         } else {
             titleLabel.textColor = NeumorphicTheme.textPrimary
-            timeRangeLabel.textColor = NeumorphicTheme.accentColor
         }
         
         titleLabel.stringValue = event.title
-        
-        let isClasses = (dayMode == .classes)
-        timeRangeLabel.stringValue = isClasses ? event.fullTimeRangeString(includeDay: false) : event.formattedStartTime
         
         updateWidth(frame.width)
     }
