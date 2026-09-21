@@ -335,13 +335,16 @@ open class NeumorphicElevatedCardView: NSView {
     }
 }
 
-// MARK: - Plain Panel Container View (Clean Modern Window Surface)
+open class FlippedNeumorphicView: NSView {
+    open override var isFlipped: Bool { return true }
+}
+
+// MARK: - Plain Panel Container View (Clean Solid Window Surface without Shadows)
 open class NeumorphicPanelContainerView: NSView {
-    public let darkShadowLayer = CALayer()
-    public let lightShadowLayer = CALayer()
-    public let contentView = NSView()
+    open override var isFlipped: Bool { return true }
+    public let contentView: NSView = FlippedNeumorphicView()
     
-    public var cornerRadiusValue: CGFloat = 24 {
+    public var cornerRadiusValue: CGFloat = 20 {
         didSet { updateAppearance() }
     }
     
@@ -361,21 +364,11 @@ open class NeumorphicPanelContainerView: NSView {
     
     private func setupViews() {
         wantsLayer = true
-        layer?.masksToBounds = false
+        layer?.masksToBounds = true
+        layer?.shadowOpacity = 0.0
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         
-        // Subtle ambient shadow
-        darkShadowLayer.masksToBounds = false
-        darkShadowLayer.shadowColor = NSColor(red: 0.1, green: 0.15, blue: 0.25, alpha: 0.10).cgColor
-        darkShadowLayer.shadowRadius = 8.0
-        darkShadowLayer.shadowOpacity = 0.50
-        darkShadowLayer.shadowOffset = CGSize(width: 0, height: -2.0)
-        layer?.addSublayer(darkShadowLayer)
-        
-        lightShadowLayer.shadowOpacity = 0.0
-        layer?.addSublayer(lightShadowLayer)
-        
-        // Clipped Content Container
+        // Clipped Content Container with Solid Ceramic Background & Border
         contentView.wantsLayer = true
         contentView.layer?.masksToBounds = true
         contentView.layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -387,22 +380,16 @@ open class NeumorphicPanelContainerView: NSView {
     open override func layout() {
         super.layout()
         let b = bounds
+        guard b.width > 0 && b.height > 0 else { return }
         contentView.frame = b
-        
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        darkShadowLayer.frame = b
-        let path = CGPath(roundedRect: b, cornerWidth: cornerRadiusValue, cornerHeight: cornerRadiusValue, transform: nil)
-        darkShadowLayer.shadowPath = path
-        CATransaction.commit()
     }
     
     public func updateAppearance() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         
-        darkShadowLayer.cornerRadius = cornerRadiusValue
-        darkShadowLayer.backgroundColor = panelBackgroundColor.cgColor
+        layer?.cornerRadius = cornerRadiusValue
+        layer?.shadowOpacity = 0.0
         
         contentView.layer?.cornerRadius = cornerRadiusValue
         contentView.layer?.backgroundColor = panelBackgroundColor.cgColor

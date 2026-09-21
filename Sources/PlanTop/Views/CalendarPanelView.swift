@@ -61,6 +61,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
     
     // Drag detection
     private var mouseDownLocation: NSPoint = .zero
+    public var dragInitialOffsetInCardY: CGFloat = 0
     private var isDraggingCard: Bool = false
     private var hasTriggeredDragStart: Bool = false
     
@@ -114,7 +115,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         timeRangeLabel.isEditable = false
         timeRangeLabel.isSelectable = false
         timeRangeLabel.alignment = .right
-        timeRangeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 38.0)
+        timeRangeLabel.font = NeumorphicTheme.futuristicTimeFont(ofSize: 42.0)
         timeRangeLabel.textColor = NeumorphicTheme.accentColor
         timeRangeLabel.lineBreakMode = .byClipping
         addSubview(timeRangeLabel)
@@ -142,6 +143,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         timerBadgeLabel.isEditable = false
         timerBadgeLabel.isSelectable = false
         timerBadgeLabel.alignment = .left
+        timerBadgeLabel.lineBreakMode = .byClipping
         addSubview(timerBadgeLabel)
         
         // 5. Expand chevron indicator (Row 2 right)
@@ -222,8 +224,8 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         let isToday = (dayMode == .today)
         let info = event.statusTimerInfo(isClassesCategory: isClasses, isTodayCategory: isToday, relativeTo: now)
         
-        let prefixFont = NeumorphicTheme.avenirFont(ofSize: 12.0, weight: .regular)
-        let timerFont = NeumorphicTheme.avenirFont(ofSize: 13.0, weight: .regular)
+        let prefixFont = NeumorphicTheme.avenirFont(ofSize: 13.5, weight: .medium)
+        let timerFont = NeumorphicTheme.avenirFont(ofSize: 16.0, weight: .heavy)
         
         let color: NSColor
         if info.isEnded {
@@ -490,6 +492,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
             }
         }
         mouseDownLocation = event.locationInWindow
+        dragInitialOffsetInCardY = max(0, min(bounds.height, locInView.y))
         isDraggingCard = false
         hasTriggeredDragStart = false
     }
@@ -499,7 +502,7 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         let dx = cur.x - mouseDownLocation.x
         let dy = cur.y - mouseDownLocation.y
         
-        if !isDraggingCard && (abs(dy) > 4 || abs(dx) > 4) {
+        if !isDraggingCard && (abs(dy) > 3 || abs(dx) > 3) {
             isDraggingCard = true
             hasTriggeredDragStart = true
             stopTitleSlideAnimation()
@@ -535,6 +538,26 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
             }
         }
         onToggleExpand?()
+    }
+    
+    public func setDraggingAppearance(_ isDragging: Bool) {
+        if isDragging {
+            outlineWidth = 1.5
+            outlineColor = NeumorphicTheme.accentColor.withAlphaComponent(0.65)
+            layer?.masksToBounds = false
+            layer?.shadowColor = NSColor.black.cgColor
+            layer?.shadowRadius = 8.0
+            layer?.shadowOpacity = 0.16
+            layer?.shadowOffset = CGSize(width: 0, height: -2)
+            alphaValue = 0.95
+        } else {
+            outlineWidth = 0.5
+            outlineColor = NeumorphicTheme.specularHighlightBorder
+            layer?.shadowOpacity = 0.0
+            layer?.masksToBounds = true
+            alphaValue = 1.0
+        }
+        updateAppearance()
     }
     
     public override func resetCursorRects() {
@@ -598,16 +621,13 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
     }
     
     public func updateWidth(_ width: CGFloat) {
-        // Far Right: removeButton (fades in on hover, vertically centered on right edge)
-        let removeBtnSize: CGFloat = 18
+        // Far Right: removeButton (fades in on hover in top-right corner)
+        let rightPad: CGFloat = 16
+        let removeBtnSize: CGFloat = 16
         let removeBtnX = max(10, width - removeBtnSize - 12)
-        let removeBtnY = (CalendarEventCardView.collapsedCardHeight - removeBtnSize) / 2
+        let removeBtnY: CGFloat = 6
         removeButton.frame = NSRect(x: removeBtnX, y: removeBtnY, width: removeBtnSize, height: removeBtnSize)
-        
-        // Right side: Event Time Label (Almost as high as container, ~48-52pt tall)
-        let isClasses = (dayMode == .classes)
-        let timeLabelH: CGFloat = 52
-        let timeLabelY = (CalendarEventCardView.collapsedCardHeight - timeLabelH) / 2
+        removeButton.layer?.zPosition = 50
         
         let timeTextColor: NSColor
         if event.isPast {
@@ -619,55 +639,98 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         }
         
         let timeRangeW: CGFloat
-        if isClasses && !event.isAllDay && event.startDate != event.endDate {
-            // Classes category: stacked start and end times to span almost the full card height
-            let timeFmt = DateFormatter()
-            timeFmt.timeStyle = .short
-            let s = timeFmt.string(from: event.startDate)
-            let e = timeFmt.string(from: event.endDate)
-            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 21.0)
+        let timeLabelH: CGFloat
+        if event.isAllDay {
+            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 32.0)
             let pStyle = NSMutableParagraphStyle()
             pStyle.alignment = .right
-            pStyle.lineSpacing = 1
-            pStyle.maximumLineHeight = 23
-            pStyle.minimumLineHeight = 23
-            let attr = NSMutableAttributedString()
-            attr.append(NSAttributedString(string: "\(s)\n– \(e)", attributes: [
-                .font: timeFont,
-                .foregroundColor: timeTextColor,
-                .paragraphStyle: pStyle
-            ]))
-            timeRangeLabel.attributedStringValue = attr
-            let timeStrSize = attr.size()
-            timeRangeW = min(max(70, width * 0.45), ceil(timeStrSize.width) + 8)
-        } else {
-            // Non-classes or all-day: prominent futuristic font spanning almost the full card height
-            let timeRangeStr = isClasses ? event.fullTimeRangeString(includeDay: false) : event.formattedStartTime
-            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 38.0)
-            let pStyle = NSMutableParagraphStyle()
-            pStyle.alignment = .right
-            let attr = NSAttributedString(string: timeRangeStr, attributes: [
+            let attr = NSAttributedString(string: "All Day", attributes: [
                 .font: timeFont,
                 .foregroundColor: timeTextColor,
                 .paragraphStyle: pStyle
             ])
             timeRangeLabel.attributedStringValue = attr
             let timeStrSize = attr.size()
-            timeRangeW = min(max(80, width * 0.50), ceil(timeStrSize.width) + 8)
+            timeRangeW = min(max(75, width * 0.45), ceil(timeStrSize.width) + 4)
+            timeLabelH = 40.0
+        } else if event.startDate == event.endDate {
+            let timeFmt = DateFormatter()
+            timeFmt.timeStyle = .short
+            let s = timeFmt.string(from: event.startDate)
+            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: 42.0)
+            let pStyle = NSMutableParagraphStyle()
+            pStyle.alignment = .right
+            let attr = NSAttributedString(string: s, attributes: [
+                .font: timeFont,
+                .foregroundColor: timeTextColor,
+                .paragraphStyle: pStyle
+            ])
+            timeRangeLabel.attributedStringValue = attr
+            let timeStrSize = attr.size()
+            timeRangeW = min(max(80, width * 0.50), ceil(timeStrSize.width) + 4)
+            timeLabelH = 46.0
+        } else {
+            // Single Line Starting Time & Ending Time (Unstacked, prominent on one line)
+            let timeFmt = DateFormatter()
+            timeFmt.timeStyle = .short
+            let s = timeFmt.string(from: event.startDate)
+            let e = timeFmt.string(from: event.endDate)
+            
+            let timeFontSize: CGFloat
+            if width >= 520 {
+                timeFontSize = 38.0
+            } else if width >= 460 {
+                timeFontSize = 36.0
+            } else if width >= 400 {
+                timeFontSize = 33.0
+            } else if width >= 340 {
+                timeFontSize = 29.0
+            } else {
+                timeFontSize = 25.0
+            }
+            
+            let timeFont = NeumorphicTheme.futuristicTimeFont(ofSize: timeFontSize)
+            let pStyle = NSMutableParagraphStyle()
+            pStyle.alignment = .right
+            
+            let attr = NSMutableAttributedString()
+            attr.append(NSAttributedString(string: s, attributes: [
+                .font: timeFont,
+                .foregroundColor: timeTextColor,
+                .paragraphStyle: pStyle
+            ]))
+            attr.append(NSAttributedString(string: " – ", attributes: [
+                .font: timeFont,
+                .foregroundColor: timeTextColor.withAlphaComponent(0.65),
+                .paragraphStyle: pStyle
+            ]))
+            attr.append(NSAttributedString(string: e, attributes: [
+                .font: timeFont,
+                .foregroundColor: timeTextColor,
+                .paragraphStyle: pStyle
+            ]))
+            
+            timeRangeLabel.attributedStringValue = attr
+            let timeStrSize = attr.size()
+            timeRangeW = min(max(90, width * 0.62), ceil(timeStrSize.width) + 4)
+            timeLabelH = 42.0
         }
         
-        let timeRangeX = max(10, removeBtnX - timeRangeW - 6)
+        // Vertically centered inside 70pt collapsed card container with balanced padding
+        let timeLabelY = (CalendarEventCardView.collapsedCardHeight - timeLabelH) / 2
+        let timeRangeX = max(10, width - timeRangeW - rightPad)
         timeRangeLabel.frame = NSRect(x: timeRangeX, y: timeLabelY, width: timeRangeW, height: timeLabelH)
         
-        // Row 1: Left = titleClipView containing titleLabel (slides on hover if title overflows)
-        let titleAvailableW = max(30, timeRangeX - 14 - 10)
+        // Row 1: Left = titleClipView containing titleLabel (16pt left padding matching rightPad)
+        let leftPad: CGFloat = 16
+        let titleAvailableW = max(30, timeRangeX - leftPad - 12)
         let titleFont = NeumorphicTheme.avenirFont(ofSize: 15.0, weight: .regular)
         titleLabel.font = titleFont
         titleLabel.stringValue = event.title
         let fullTitleSize = (event.title as NSString).size(withAttributes: [.font: titleFont])
         let fullTitleW = ceil(fullTitleSize.width) + 6
         
-        titleClipView.frame = NSRect(x: 14, y: 11, width: titleAvailableW, height: 24)
+        titleClipView.frame = NSRect(x: leftPad, y: 10, width: titleAvailableW, height: 24)
         
         if fullTitleW > titleAvailableW {
             isTitleOverflowing = true
@@ -686,13 +749,18 @@ public final class CalendarEventCardView: NeumorphicDepressedCardView {
         let timerAttr = timerAttributedString()
         timerBadgeLabel.attributedStringValue = timerAttr
         let timerSize = timerAttr.size()
-        let maxTimerW = max(40, timeRangeX - 14 - 24)
+        let maxTimerW = max(40, timeRangeX - leftPad - 8)
         let timerW = min(maxTimerW, ceil(timerSize.width) + 4)
-        timerBadgeLabel.frame = NSRect(x: 14, y: 40, width: timerW, height: 20)
+        timerBadgeLabel.frame = NSRect(x: leftPad, y: 38, width: timerW, height: 24)
         
         let chevSize: CGFloat = 11
-        let chevX = min(timeRangeX - chevSize - 6, timerBadgeLabel.frame.maxX + 6)
-        expandChevron.frame = NSRect(x: chevX, y: 44, width: chevSize, height: chevSize)
+        let chevX = timerBadgeLabel.frame.maxX + 6
+        if chevX + chevSize + 4 <= timeRangeX {
+            expandChevron.isHidden = false
+            expandChevron.frame = NSRect(x: chevX, y: 44, width: chevSize, height: chevSize)
+        } else {
+            expandChevron.isHidden = true
+        }
         
         if isExpanded {
             let targetCardH = CalendarEventCardView.height(for: event, isExpanded: true, width: width)
@@ -765,6 +833,7 @@ public final class NeumorphicTabButton: NeumorphicDynamicButton {
 
 // MARK: - Single Unified Calendar Panel View with Switcher
 public final class CalendarPanelView: NSView {
+    override public var isFlipped: Bool { return true }
     public var dayMode: CalendarDayMode = .today {
         didSet {
             guard !isTransitioningCategory else { return }
@@ -797,9 +866,12 @@ public final class CalendarPanelView: NSView {
     private let openSettingsButton = NeumorphicDynamicButton(frame: .zero)
     
     public var expandedEventId: String? = nil
+    public var onDragStateChanged: ((Bool) -> Void)?
     private var events: [CalendarEvent] = []
     private var cardViews: [CalendarEventCardView] = []
     private var isDraggingAnyCard: Bool = false
+    private var autoScrollTimer: Timer?
+    private var lastDragMouseParentY: CGFloat = 0
     private var isTransitioningCategory: Bool = false
     private var secondTickerTimer: Timer?
     
@@ -828,6 +900,7 @@ public final class CalendarPanelView: NSView {
     deinit {
         NotificationCenter.default.removeObserver(self)
         secondTickerTimer?.invalidate()
+        autoScrollTimer?.invalidate()
     }
     
     private func registerObservers() {
@@ -1040,7 +1113,7 @@ public final class CalendarPanelView: NSView {
     }
     
     public func selectDayMode(_ mode: CalendarDayMode) {
-        guard self.dayMode != mode && !isTransitioningCategory else { return }
+        guard self.dayMode != mode else { return }
         onUserInteraction?()
         isTransitioningCategory = true
         self.dayMode = mode
@@ -1049,22 +1122,27 @@ public final class CalendarPanelView: NSView {
         self.updateDateHeader()
         
         let service = GoogleCalendarService.shared
-        let nextEvents: [CalendarEvent]
-        switch mode {
-        case .classes: nextEvents = service.classesEvents
-        case .today: nextEvents = service.todaysEvents
-        case .tomorrow: nextEvents = service.tomorrowsEvents
-        }
         
-        // Single synchronized crossfade transition
+        // Fast, smooth crossfade transition
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.12
+            ctx.duration = 0.08
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.scrollView.animator().alphaValue = 0.0
             self.emptyStateLabel.animator().alphaValue = 0.0
         }, completionHandler: { [weak self] in
             guard let self = self else { return }
+            let currentMode = self.dayMode
+            let nextEvents: [CalendarEvent]
+            switch currentMode {
+            case .classes: nextEvents = service.classesEvents
+            case .today: nextEvents = service.todaysEvents
+            case .tomorrow: nextEvents = service.tomorrowsEvents
+            }
             self.events = nextEvents
+            
+            // Reset scroll position cleanly to top
+            self.scrollView.contentView.scroll(to: .zero)
+            self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
             
             let status = service.syncStatus
             if status == .needsPermission || status == .unauthorized {
@@ -1089,10 +1167,11 @@ public final class CalendarPanelView: NSView {
             
             // Adjust panel height cleanly for destination size
             self.needsLayout = true
+            self.layoutSubtreeIfNeeded()
             self.onHeightChanged?()
             
             NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.18
+                ctx.duration = 0.14
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 self.scrollView.animator().alphaValue = 1.0
                 self.emptyStateLabel.animator().alphaValue = 1.0
@@ -1265,63 +1344,157 @@ public final class CalendarPanelView: NSView {
     
     private func handleDragStart(card: CalendarEventCardView) {
         isDraggingAnyCard = true
-        card.removeFromSuperview()
-        documentContainer.addSubview(card)
+        onDragStateChanged?(true)
+        onUserInteraction?()
         
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            card.animator().alphaValue = 0.90
+        // Elevate card above peers without removing from superview
+        documentContainer.addSubview(card, positioned: .above, relativeTo: nil)
+        card.layer?.zPosition = 100
+        card.setDraggingAppearance(true)
+        
+        startAutoScrollTimer(for: card)
+    }
+    
+    private func startAutoScrollTimer(for card: CalendarEventCardView) {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self, weak card] _ in
+            guard let self = self, let card = card, self.isDraggingAnyCard else { return }
+            self.checkAndPerformAutoScroll(card: card)
+        }
+    }
+    
+    private func stopAutoScrollTimer() {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = nil
+    }
+    
+    private func checkAndPerformAutoScroll(card: CalendarEventCardView) {
+        guard isDraggingAnyCard else { return }
+        let visibleRect = scrollView.contentView.bounds
+        let parentY = lastDragMouseParentY
+        guard parentY > 0 else { return }
+        
+        let scrollMargin: CGFloat = 36.0
+        let topThreshold = visibleRect.minY + scrollMargin
+        let bottomThreshold = visibleRect.maxY - scrollMargin
+        
+        var didScroll = false
+        if parentY < topThreshold {
+            let distance = topThreshold - parentY
+            let step = max(2.0, min(12.0, (distance / scrollMargin) * 12.0))
+            let newY = max(0, visibleRect.minY - step)
+            if newY != visibleRect.minY {
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: newY))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                didScroll = true
+            }
+        } else if parentY > bottomThreshold {
+            let distance = parentY - bottomThreshold
+            let step = max(2.0, min(12.0, (distance / scrollMargin) * 12.0))
+            let maxScroll = max(0, documentContainer.frame.height - visibleRect.height)
+            let newY = min(maxScroll, visibleRect.minY + step)
+            if newY != visibleRect.minY {
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: newY))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                didScroll = true
+            }
+        }
+        
+        if didScroll {
+            let rawTargetY = parentY - card.dragInitialOffsetInCardY
+            let minCardY: CGFloat = 4
+            let maxCardY = max(minCardY, documentContainer.frame.height - card.frame.height - 4)
+            let clampedY = max(minCardY, min(maxCardY, rawTargetY))
+            card.frame.origin.y = clampedY
+            reorderSlotsIfNeeded(for: card, clampedY: clampedY)
         }
     }
     
     private func handleDragMoved(card: CalendarEventCardView, dy: CGFloat, parentY: CGFloat) {
         guard isDraggingAnyCard else { return }
+        lastDragMouseParentY = parentY
+        
+        let rawTargetY = parentY - card.dragInitialOffsetInCardY
+        let minCardY: CGFloat = 4
+        let maxCardY = max(minCardY, documentContainer.frame.height - card.frame.height - 4)
+        let clampedY = max(minCardY, min(maxCardY, rawTargetY))
+        card.frame.origin.y = clampedY
+        
+        reorderSlotsIfNeeded(for: card, clampedY: clampedY)
+    }
+    
+    private func reorderSlotsIfNeeded(for card: CalendarEventCardView, clampedY: CGFloat) {
+        guard cardViews.count > 1 else { return }
+        guard let currentIndex = cardViews.firstIndex(of: card) else { return }
+        
+        let cardGap: CGFloat = 7
+        var slotCenters: [CGFloat] = []
+        var runningY: CGFloat = 4
+        for c in cardViews {
+            let h = c.frame.height
+            slotCenters.append(runningY + (h / 2.0))
+            runningY += h + cardGap
+        }
+        
+        let draggedCenterY = clampedY + (card.frame.height / 2.0)
+        var targetIndex = currentIndex
+        let hysteresis: CGFloat = 10.0
+        
+        // Check if should move UP
+        while targetIndex > 0 {
+            let boundaryUp = (slotCenters[targetIndex - 1] + slotCenters[targetIndex]) / 2.0
+            if draggedCenterY < boundaryUp - hysteresis {
+                targetIndex -= 1
+            } else {
+                break
+            }
+        }
+        
+        // Check if should move DOWN
+        while targetIndex < cardViews.count - 1 {
+            let boundaryDown = (slotCenters[targetIndex] + slotCenters[targetIndex + 1]) / 2.0
+            if draggedCenterY > boundaryDown + hysteresis {
+                targetIndex += 1
+            } else {
+                break
+            }
+        }
+        
+        if targetIndex != currentIndex {
+            let movedCard = cardViews.remove(at: currentIndex)
+            cardViews.insert(movedCard, at: targetIndex)
+            
+            repositionOtherCardsAnimated(except: card)
+        }
+    }
+    
+    private func repositionOtherCardsAnimated(except draggingCard: CalendarEventCardView) {
         let stackWidth = scrollView.frame.width
         let cardPad: CGFloat = 4
         let cardW = max(180, stackWidth - (cardPad * 2))
         let cardGap: CGFloat = 7
         
-        let targetY = parentY - (card.frame.height / 2)
-        let clampedY = max(4, min(documentContainer.frame.height - card.frame.height - 4, targetY))
-        card.frame.origin.y = clampedY
-        
-        guard let currentCardIndex = cardViews.firstIndex(of: card) else { return }
-        
-        let otherCards = cardViews.filter { $0 != card }
-        var targetIndex = otherCards.count
-        var runningY: CGFloat = 4
-        
-        for (idx, other) in otherCards.enumerated() {
-            let slotCenter = runningY + (other.frame.height / 2)
-            if clampedY < slotCenter {
-                targetIndex = idx
-                break
-            }
-            runningY += other.frame.height + cardGap
-        }
-        
-        if targetIndex != currentCardIndex {
-            cardViews.remove(at: currentCardIndex)
-            cardViews.insert(card, at: min(targetIndex, cardViews.count))
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.20
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                var slotY: CGFloat = 4
-                for c in self.cardViews {
-                    if c == card {
-                        slotY += c.frame.height + cardGap
-                        continue
-                    }
-                    c.animator().frame = NSRect(x: cardPad, y: slotY, width: cardW, height: c.frame.height)
-                    slotY += c.frame.height + cardGap
+            var runningY: CGFloat = 4
+            for c in self.cardViews {
+                let h = c.frame.height
+                if c != draggingCard {
+                    c.animator().frame = NSRect(x: cardPad, y: runningY, width: cardW, height: h)
                 }
+                runningY += h + cardGap
             }
         }
     }
     
     private func handleDragEnd(card: CalendarEventCardView) {
         isDraggingAnyCard = false
+        stopAutoScrollTimer()
+        onDragStateChanged?(false)
+        onUserInteraction?()
+        
         let stackWidth = scrollView.frame.width
         let cardPad: CGFloat = 4
         let cardW = max(180, stackWidth - (cardPad * 2))
@@ -1338,16 +1511,27 @@ public final class CalendarPanelView: NSView {
         
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             card.animator().frame = NSRect(x: cardPad, y: targetSlotY, width: cardW, height: card.frame.height)
             card.animator().alphaValue = 1.0
+            card.layer?.shadowOpacity = 0.0
         }, completionHandler: { [weak self] in
             guard let self = self else { return }
+            card.layer?.zPosition = 0
+            card.setDraggingAppearance(false)
+            
             self.events = self.cardViews.map { $0.event }
             GoogleCalendarService.shared.saveCustomOrder(
                 eventIds: self.events.map { $0.id },
                 forMode: self.dayMode
             )
+            
+            // Align all resting frames cleanly
+            var slotY: CGFloat = 4
+            for c in self.cardViews {
+                c.frame = NSRect(x: cardPad, y: slotY, width: cardW, height: c.frame.height)
+                slotY += c.frame.height + cardGap
+            }
         })
     }
     
@@ -1371,8 +1555,6 @@ public final class CalendarPanelView: NSView {
         }
         totalH = max(scrollView.frame.height, totalH + 4)
         
-        let existingCards = documentContainer.subviews.compactMap { $0 as? CalendarEventCardView }
-        
         self.onHeightChanged?()
         
         NSAnimationContext.runAnimationGroup { context in
@@ -1383,7 +1565,7 @@ public final class CalendarPanelView: NSView {
             documentContainer.animator().frame = NSRect(x: 0, y: 0, width: stackWidth, height: totalH)
             
             var curY: CGFloat = 4
-            for card in existingCards {
+            for card in self.cardViews {
                 let isExp = (self.expandedEventId == card.event.id)
                 let cardH = CalendarEventCardView.height(for: card.event, isExpanded: isExp, width: cardW)
                 let targetFrame = NSRect(x: cardPad, y: curY, width: cardW, height: cardH)
@@ -1474,8 +1656,8 @@ public final class CalendarPanelView: NSView {
         switcherContainer.isHidden = false
         subtitleLabel.isHidden = false
         
-        // 1. Switcher Row (Top): y = h - 34
-        let switcherY = h - 34
+        // 1. Switcher Row (Top): y = 2
+        let switcherY: CGFloat = 2
         switcherContainer.frame = NSRect(x: 14, y: switcherY, width: max(10, w - 28), height: 30)
         
         let calBtnSize: CGFloat = 28
@@ -1489,13 +1671,13 @@ public final class CalendarPanelView: NSView {
         todayTabBtn.frame = NSRect(x: tabW + tabGap, y: 1, width: tabW, height: 28)
         tomorrowTabBtn.frame = NSRect(x: (tabW + tabGap) * 2, y: 1, width: tabW, height: 28)
         
-        // 2. Subtitle Row: y = switcherY - 20
-        let subY = switcherY - 20
+        // 2. Subtitle Row: y = switcherY + 30 + 6
+        let subY = switcherY + 30 + 6
         subtitleLabel.frame = NSRect(x: 16, y: subY, width: max(10, w - 32), height: 16)
         
-        // 3. Content area below subtitle
-        let contentY: CGFloat = 6
-        let contentHeight = max(10, subY - contentY - 4)
+        // 3. Content area below subtitle: y = subY + 16 + 4
+        let contentY = subY + 16 + 4
+        let contentHeight = max(10, h - contentY - 6)
         
         let status = GoogleCalendarService.shared.syncStatus
         if status == .needsPermission || status == .unauthorized {
@@ -1503,9 +1685,9 @@ public final class CalendarPanelView: NSView {
             emptyStateLabel.isHidden = true
             scrollView.isHidden = true
             permissionContainer.frame = NSRect(x: 14, y: contentY, width: max(10, w - 28), height: contentHeight)
-            permissionLabel.frame = NSRect(x: 10, y: contentHeight - 24, width: permissionContainer.frame.width - 20, height: 16)
-            grantAccessButton.frame = NSRect(x: (permissionContainer.frame.width / 2) - 95, y: 6, width: 90, height: 22)
-            openSettingsButton.frame = NSRect(x: (permissionContainer.frame.width / 2) + 5, y: 6, width: 100, height: 22)
+            permissionLabel.frame = NSRect(x: 10, y: 14, width: permissionContainer.frame.width - 20, height: 16)
+            grantAccessButton.frame = NSRect(x: (permissionContainer.frame.width / 2) - 95, y: 38, width: 90, height: 22)
+            openSettingsButton.frame = NSRect(x: (permissionContainer.frame.width / 2) + 5, y: 38, width: 100, height: 22)
         } else if events.isEmpty {
             permissionContainer.isHidden = true
             emptyStateLabel.isHidden = false
@@ -1534,15 +1716,13 @@ public final class CalendarPanelView: NSView {
             // Only update static frames if not actively dragging a card
             if !isDraggingAnyCard {
                 var curY: CGFloat = 4
-                for subview in documentContainer.subviews {
-                    if let card = subview as? CalendarEventCardView {
-                        let isExp = (expandedEventId == card.event.id)
-                        let cardH = CalendarEventCardView.height(for: card.event, isExpanded: isExp, width: cardW)
-                        let targetFrame = NSRect(x: cardPad, y: curY, width: cardW, height: cardH)
-                        card.frame = targetFrame
-                        card.updateWidth(cardW)
-                        curY += cardH + cardGap
-                    }
+                for card in cardViews {
+                    let isExp = (expandedEventId == card.event.id)
+                    let cardH = CalendarEventCardView.height(for: card.event, isExpanded: isExp, width: cardW)
+                    let targetFrame = NSRect(x: cardPad, y: curY, width: cardW, height: cardH)
+                    card.frame = targetFrame
+                    card.updateWidth(cardW)
+                    curY += cardH + cardGap
                 }
             }
         }

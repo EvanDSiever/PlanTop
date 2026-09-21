@@ -102,15 +102,15 @@ struct CalendarEventTestsRunner {
         )
         assertEqual(allDayEvent.fullTimeRangeString(includeDay: false), "All Day", "All day event returns 'All Day'")
 
-        // Test 5: Timer formatting (Requirements 3 & 4)
-        assertEqual(CalendarEvent.formatRemainingDuration(187200), "2 days 4 hours", "Formats days and hours")
-        assertEqual(CalendarEvent.formatRemainingDuration(86400), "1 day", "Formats 1 day singular")
-        assertEqual(CalendarEvent.formatRemainingDuration(11700), "3 hours 15 mins", "Formats hours and mins")
-        assertEqual(CalendarEvent.formatRemainingDuration(3600), "1 hour", "Formats 1 hour singular")
+        // Test 5: Timer formatting (Details up to the seconds)
+        assertEqual(CalendarEvent.formatRemainingDuration(187200), "2 days 4 hours 0 mins 0s", "Formats days, hours, mins, and secs")
+        assertEqual(CalendarEvent.formatRemainingDuration(86400), "1 day 0 hours 0 mins 0s", "Formats 1 day with hours, mins, and secs")
+        assertEqual(CalendarEvent.formatRemainingDuration(11700), "3 hours 15 mins 0s", "Formats hours, mins, and secs")
+        assertEqual(CalendarEvent.formatRemainingDuration(3600), "1 hour 0 mins 0s", "Formats 1 hour with mins and secs")
         assertEqual(CalendarEvent.formatRemainingDuration(1512), "25 mins 12s", "Formats mins and secs")
         assertEqual(CalendarEvent.formatRemainingDuration(45), "45s", "Formats secs only")
 
-        // Test 6: Classes Timers - "Starts in" and "Ends in" (Requirement 3)
+        // Test 6: Classes Timers - "Starts in" and "Ends in" with seconds
         let futureClass = CalendarEvent(
             title: "IEL Writing",
             startDate: now.addingTimeInterval(7200), // starts in 2h
@@ -118,7 +118,7 @@ struct CalendarEventTestsRunner {
         )
         let futureInfo = futureClass.statusTimerInfo(isClassesCategory: true, isTodayCategory: false, relativeTo: now)
         assertEqual(futureInfo.prefix, "Starts in ", "Classes event before start has 'Starts in ' prefix")
-        assertEqual(futureInfo.timer, "2 hours", "Classes event has correct duration timer")
+        assertEqual(futureInfo.timer, "2 hours 0 mins 0s", "Classes event has correct duration timer with seconds")
 
         let ongoingClass = CalendarEvent(
             title: "IEL Speaking",
@@ -127,9 +127,9 @@ struct CalendarEventTestsRunner {
         )
         let ongoingInfo = ongoingClass.statusTimerInfo(isClassesCategory: true, isTodayCategory: false, relativeTo: now)
         assertEqual(ongoingInfo.prefix, "Ends in ", "Classes event in session has 'Ends in ' prefix")
-        assertEqual(ongoingInfo.timer, "45 mins", "Classes event has correct remaining duration timer")
+        assertEqual(ongoingInfo.timer, "45 mins 0s", "Classes event has correct remaining duration timer with seconds")
 
-        // Test 7: Today Timers - "Limit in" (Requirement 4)
+        // Test 7: Today Timers - "Limit in" with seconds
         let todayEvent = CalendarEvent(
             title: "Finish Project Report",
             startDate: now.addingTimeInterval(-3600),
@@ -137,7 +137,7 @@ struct CalendarEventTestsRunner {
         )
         let todayInfo = todayEvent.statusTimerInfo(isClassesCategory: false, isTodayCategory: true, relativeTo: now)
         assertEqual(todayInfo.prefix, "Limit in ", "Today event has 'Limit in ' prefix")
-        assertEqual(todayInfo.timer, "3 hours 15 mins", "Today event has correct countdown timer")
+        assertEqual(todayInfo.timer, "3 hours 15 mins 0s", "Today event has correct countdown timer with seconds")
 
         // Test 8: Avenir Font Integration (Requirement 5)
         let avenirBook = NeumorphicTheme.avenirFont(ofSize: 13, weight: .regular)

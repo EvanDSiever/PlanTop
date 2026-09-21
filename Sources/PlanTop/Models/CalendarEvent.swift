@@ -297,7 +297,7 @@ public struct CalendarEvent: Identifiable, Equatable {
         return timeSpan
     }
     
-    /// Formats remaining duration according to "XX days XX hours ..." specifications
+    /// Formats remaining duration according to "XX days XX hours XX mins XXs" specifications (down to the second)
     public static func formatRemainingDuration(_ interval: TimeInterval) -> String {
         let totalSeconds = max(0, Int(interval))
         let days = totalSeconds / 86400
@@ -308,28 +308,31 @@ public struct CalendarEvent: Identifiable, Equatable {
         if days > 0 {
             let dUnit = days == 1 ? "day" : "days"
             let hUnit = hours == 1 ? "hour" : "hours"
-            if hours > 0 {
-                return "\(days) \(dUnit) \(hours) \(hUnit)"
-            } else {
-                return "\(days) \(dUnit)"
-            }
+            let mUnit = minutes == 1 ? "min" : "mins"
+            return "\(days) \(dUnit) \(hours) \(hUnit) \(minutes) \(mUnit) \(seconds)s"
         } else if hours > 0 {
             let hUnit = hours == 1 ? "hour" : "hours"
             let mUnit = minutes == 1 ? "min" : "mins"
-            if minutes > 0 {
-                return "\(hours) \(hUnit) \(minutes) \(mUnit)"
-            } else {
-                return "\(hours) \(hUnit)"
-            }
+            return "\(hours) \(hUnit) \(minutes) \(mUnit) \(seconds)s"
         } else if minutes > 0 {
             let mUnit = minutes == 1 ? "min" : "mins"
-            if seconds > 0 {
-                return "\(minutes) \(mUnit) \(seconds)s"
-            } else {
-                return "\(minutes) \(mUnit)"
-            }
+            return "\(minutes) \(mUnit) \(seconds)s"
         } else {
             return "\(seconds)s"
+        }
+    }
+    
+    /// Compact duration formatter (e.g. "1h 30m", "45m", "2h")
+    public static func formatShortDuration(_ interval: TimeInterval) -> String {
+        let totalMins = max(1, Int(round(interval / 60)))
+        let hours = totalMins / 60
+        let mins = totalMins % 60
+        if hours > 0 && mins > 0 {
+            return "\(hours)h \(mins)m"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(mins)m"
         }
     }
     

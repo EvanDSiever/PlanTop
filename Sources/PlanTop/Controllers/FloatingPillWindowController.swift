@@ -16,6 +16,7 @@ public final class FloatingPillWindowController: NSObject {
     
     private var retractTimer: Timer?
     private var hoverStartTime: Date?
+    private var lastUserInteractionTime: Date = .distantPast
     
     // Cached frame for thread-safe access from mouseQueue
     private var cachedPillRect: NSRect = .zero
@@ -100,6 +101,9 @@ public final class FloatingPillWindowController: NSObject {
             NotificationCenter.default.post(name: .planTopSettingsChanged, object: nil)
         }
     }
+    
+    // Card dragging state to prevent accidental dismissal during drag & reorder
+    public var isDraggingCard: Bool = false
     
     public func togglePin() {
         isPinned.toggle()
@@ -212,6 +216,7 @@ public final class FloatingPillWindowController: NSObject {
     
     deinit {
         stopMouseTracking()
+        stopGlobalClickMonitoring()
         retractTimer?.invalidate()
         guideHideTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
@@ -250,112 +255,127 @@ public final class FloatingPillWindowController: NSObject {
         mouseTrackerTimer = nil
     }
     
+    private var globalClickMonitor: Any?
+    
+    private func startGlobalClickMonitoring() {
+        guard globalClickMonitor == nil else { return }
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self = self, !self.isPinned, !self.isDraggingCard else { return }
+            guard self.isDroppedDown || (self.pillPanel?.isVisible ?? false) else { return }
+            let mouseLoc = NSEvent.mouseLocation
+            if !self.isMouseInsidePanel(mouseLoc: mouseLoc) {
+                self.retract(immediately: false)
+            }
+        }
+    }
+    
+    private func stopGlobalClickMonitoring() {
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickMonitor = nil
+        }
+    }
+    
+    private func isMouseInsidePanel(mouseLoc: NSPoint) -> Bool {
+        if isDraggingCard { return true }
+        if let panel = pillPanel, panel.isVisible {
+            return panel.frame.insetBy(dx: -4, dy: -4).contains(mouseLoc)
+        }
+        if isDroppedDown && cachedPillRect != .zero {
+            return cachedPillRect.insetBy(dx: -4, dy: -4).contains(mouseLoc)
+        }
+        return false
+    }
+    
+    public func scheduleRetractIfNeeded(delay: TimeInterval = 0.25) {
+        guard !isPinned, !isDraggingCard else { return }
+        guard isDroppedDown || (pillPanel?.isVisible ?? false) else { return }
+        if retractTimer != nil { return }
+        
+        retractTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            self.retractTimer = nil
+            if self.isPinned || self.isDraggingCard { return }
+            
+            let mouseLoc = NSEvent.mouseLocation
+            if self.isMouseInsidePanel(mouseLoc: mouseLoc) {
+                self.isHoveringActive = true
+                return
+            }
+            self.retract()
+        }
+    }
+    
     public func notifyUserInteraction() {
+        lastUserInteractionTime = Date()
         retractTimer?.invalidate()
         retractTimer = nil
         isHoveringActive = true
     }
     
     private func checkMousePosition() {
-        guard isEnabled else { return }
-        if isPinned || isManuallyOpened { return }
+        guard isEnabled, !isPinned, !isDraggingCard else { return }
         
         let mouseLoc = NSEvent.mouseLocation
         
-        if isPillVisibleInternal {
-            var isInsidePanel = false
-            if let panel = pillPanel, panel.isVisible {
-                let panelFrame = panel.frame.insetBy(dx: -40, dy: -30)
-                let cached = cachedPillRect.insetBy(dx: -40, dy: -30)
-                if panelFrame.contains(mouseLoc) || cached.contains(mouseLoc) {
-                    isInsidePanel = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.isEnabled, !self.isPinned, !self.isDraggingCard else { return }
+            
+            let isPanelVisible = self.isDroppedDown || (self.pillPanel?.isVisible ?? false)
+            
+            if isPanelVisible {
+                if self.isMouseInsidePanel(mouseLoc: mouseLoc) {
+                    // Cursor is inside panel
+                    self.hoverStartTime = nil
+                    self.retractTimer?.invalidate()
+                    self.retractTimer = nil
+                    self.isHoveringActive = true
+                    return
+                } else {
+                    // Cursor is outside panel
+                    self.isHoveringActive = false
                 }
-            } else {
-                isInsidePanel = cachedPillRect.contains(mouseLoc)
             }
             
-            if isInsidePanel {
-                hoverStartTime = nil
-                retractTimer?.invalidate()
-                retractTimer = nil
-                isHoveringActive = true
-                return
-            }
-        }
-        
-        // Target Primary Screen
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? NSScreen.main
-        guard let targetScreen = screen else { return }
-        
-        let screenFrame = targetScreen.frame
-        let visibleFrame = targetScreen.visibleFrame
-        
-        let triggerReach = scanReach
-        let triggerHeight = scanHeight
-        let triggerY = visibleFrame.midY - (triggerHeight / 2) + 20
-        
-        let triggerZone = NSRect(
-            x: screenFrame.maxX - triggerReach,
-            y: triggerY,
-            width: triggerReach,
-            height: triggerHeight
-        )
-        
-        let isInZone = triggerZone.contains(mouseLoc)
-        
-        if isInZone {
-            if hoverDelay <= 0.001 {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    if !self.isDroppedDown {
+            // Target Primary Screen for Right-Edge Hover Trigger
+            let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? NSScreen.main
+            guard let targetScreen = screen else { return }
+            
+            let screenFrame = targetScreen.frame
+            let visibleFrame = targetScreen.visibleFrame
+            
+            let triggerReach = self.scanReach
+            let triggerHeight = self.scanHeight
+            let triggerY = visibleFrame.midY - (triggerHeight / 2) + 20
+            
+            let triggerZone = NSRect(
+                x: screenFrame.maxX - triggerReach,
+                y: triggerY,
+                width: triggerReach,
+                height: triggerHeight
+            )
+            
+            let isInZone = triggerZone.contains(mouseLoc)
+            
+            if isInZone {
+                if !self.isDroppedDown {
+                    if self.hoverDelay <= 0.001 {
                         self.dropDown()
+                    } else {
+                        if let start = self.hoverStartTime {
+                            if Date().timeIntervalSince(start) >= self.hoverDelay {
+                                self.dropDown()
+                            }
+                        } else {
+                            self.hoverStartTime = Date()
+                        }
                     }
                 }
             } else {
-                if let start = hoverStartTime {
-                    if Date().timeIntervalSince(start) >= hoverDelay {
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self = self else { return }
-                            if !self.isDroppedDown {
-                                self.dropDown()
-                            }
-                        }
-                    }
-                } else {
-                    hoverStartTime = Date()
-                }
-            }
-        } else {
-            hoverStartTime = nil
-            if isPillVisibleInternal && hoverDropOnly && !isHoveringActive && !isPinned {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    let currentLoc = NSEvent.mouseLocation
-                    if let panel = self.pillPanel, panel.isVisible {
-                        let panelFrame = panel.frame.insetBy(dx: -40, dy: -30)
-                        let cached = self.cachedPillRect.insetBy(dx: -40, dy: -30)
-                        if panelFrame.contains(currentLoc) || cached.contains(currentLoc) {
-                            self.retractTimer?.invalidate()
-                            self.retractTimer = nil
-                            self.isHoveringActive = true
-                            return
-                        }
-                    }
-                    if self.retractTimer == nil && self.isDroppedDown && !self.isHoveringActive {
-                        self.retractTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
-                            guard let self = self else { return }
-                            let finalLoc = NSEvent.mouseLocation
-                            if let panel = self.pillPanel, panel.isVisible {
-                                let panelFrame = panel.frame.insetBy(dx: -40, dy: -30)
-                                let cached = self.cachedPillRect.insetBy(dx: -40, dy: -30)
-                                if panelFrame.contains(finalLoc) || cached.contains(finalLoc) {
-                                    self.isHoveringActive = true
-                                    return
-                                }
-                            }
-                            self.retract()
-                        }
-                    }
+                self.hoverStartTime = nil
+                // If panel is visible and mouse is outside panel and outside trigger zone:
+                if isPanelVisible {
+                    self.scheduleRetractIfNeeded(delay: 0.25)
                 }
             }
         }
@@ -472,8 +492,15 @@ public final class FloatingPillWindowController: NSObject {
             return (panel, pv)
         }
         
+        let screen = NSScreen.main
+        let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let visibleFrame = screen?.visibleFrame ?? screenFrame
+        let initialH: CGFloat = 400
+        let initialY = visibleFrame.midY - (initialH / 2) + 20
+        let initialX = screenFrame.maxX - customPanelWidth - 16
+        
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: customPanelWidth, height: 400),
+            contentRect: NSRect(x: initialX, y: initialY, width: customPanelWidth, height: initialH),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -516,39 +543,23 @@ public final class FloatingPillWindowController: NSObject {
         }
         pv.onHoverStateChanged = { [weak self] isHovered in
             guard let self = self else { return }
-            if self.isPinned { return }
+            if self.isPinned || self.isDraggingCard { return }
             if isHovered {
                 self.retractTimer?.invalidate()
                 self.retractTimer = nil
                 self.isHoveringActive = true
             } else {
-                // Before scheduling retract, check if the mouse is actually still inside the panel
-                let mouseLoc = NSEvent.mouseLocation
-                if let panel = self.pillPanel, panel.isVisible {
-                    let panelFrame = panel.frame.insetBy(dx: -40, dy: -30)
-                    let cached = self.cachedPillRect.insetBy(dx: -40, dy: -30)
-                    if panelFrame.contains(mouseLoc) || cached.contains(mouseLoc) {
-                        self.isHoveringActive = true
-                        return
-                    }
-                }
-                
                 self.isHoveringActive = false
-                if self.retractTimer == nil && self.isDroppedDown && self.hoverDropOnly {
-                    self.retractTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
-                        guard let self = self else { return }
-                        let finalLoc = NSEvent.mouseLocation
-                        if let panel = self.pillPanel, panel.isVisible {
-                            let panelFrame = panel.frame.insetBy(dx: -40, dy: -30)
-                            let cached = self.cachedPillRect.insetBy(dx: -40, dy: -30)
-                            if panelFrame.contains(finalLoc) || cached.contains(finalLoc) {
-                                self.isHoveringActive = true
-                                return
-                            }
-                        }
-                        self.retract()
-                    }
-                }
+                self.scheduleRetractIfNeeded(delay: 0.25)
+            }
+        }
+        pv.onDragStateChanged = { [weak self] isDragging in
+            guard let self = self else { return }
+            self.isDraggingCard = isDragging
+            if isDragging {
+                self.retractTimer?.invalidate()
+                self.retractTimer = nil
+                self.isHoveringActive = true
             }
         }
         
@@ -562,30 +573,35 @@ public final class FloatingPillWindowController: NSObject {
         if manually {
             isManuallyOpened = true
         }
-        guard let screen = NSScreen.main else { return }
+        let mouseLoc = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? NSScreen.main
+        guard let screen = targetScreen else { return }
         let (panel, pv) = setupPillPanel()
         
         pv.preferredPanelWidth = customPanelWidth
-        pv.reloadCalendar()
+        
+        let wasDropped = isDroppedDown
+        isDroppedDown = true
+        isPillVisibleInternal = true
         
         let fittingSize = pv.calculateFittingSize()
-        panel.setContentSize(fittingSize)
-        pv.frame = NSRect(origin: .zero, size: fittingSize)
-        
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         let rightMargin: CGFloat = 16
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
+        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
         
-        let wasDropped = isDroppedDown
-        isDroppedDown = true
-        isPillVisibleInternal = true
-        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
+        panel.setFrame(targetFrame, display: true)
+        pv.frame = NSRect(origin: .zero, size: fittingSize)
+        cachedPillRect = targetFrame
         
-        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+        pv.reloadCalendar()
+        
         panel.alphaValue = 1.0
         panel.orderFrontRegardless()
+        
+        startGlobalClickMonitoring()
         
         if !wasDropped || !pv.isStretchedOut {
             pv.stretchOut(animated: true)
@@ -597,6 +613,7 @@ public final class FloatingPillWindowController: NSObject {
         if isPinned && !immediately {
             return
         }
+        stopGlobalClickMonitoring()
         guard let panel = pillPanel, let pv = pillView, isDroppedDown || panel.isVisible else { return }
         isDroppedDown = false
         isPillVisibleInternal = false
@@ -631,7 +648,7 @@ public final class FloatingPillWindowController: NSObject {
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         
         var targetY: CGFloat
-        if panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY {
+        if panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY + 200 {
             targetY = panel.frame.maxY - fittingSize.height
         } else {
             targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
@@ -639,7 +656,7 @@ public final class FloatingPillWindowController: NSObject {
         if targetY < visibleFrame.minY + 16 { targetY = visibleFrame.minY + 16 }
         if targetY + fittingSize.height > visibleFrame.maxY - 16 { targetY = visibleFrame.maxY - 16 - fittingSize.height }
         
-        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
+        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
         panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
     }
@@ -662,37 +679,42 @@ public final class FloatingPillWindowController: NSObject {
         let rightMargin: CGFloat = 16
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         
-        // Anchor the top of the panel so header, clock, and category tabs do NOT jump under cursor
-        var targetY: CGFloat
-        if panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY {
-            targetY = panel.frame.maxY - fittingSize.height
+        // Anchor the top of the panel rigidly when open, otherwise center it
+        var currentTop: CGFloat
+        if isDroppedDown && panel.isVisible && panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY + 200 {
+            currentTop = panel.frame.maxY
         } else {
-            targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
+            currentTop = visibleFrame.midY + (fittingSize.height / 2) + 20
         }
         
-        // Clamp vertically so the panel stays comfortably within visible screen bounds
-        if targetY < visibleFrame.minY + 16 {
-            targetY = visibleFrame.minY + 16
-        }
-        if targetY + fittingSize.height > visibleFrame.maxY - 16 {
-            targetY = visibleFrame.maxY - 16 - fittingSize.height
+        // Ensure top is within visible screen bounds
+        if currentTop > visibleFrame.maxY - 16 {
+            currentTop = visibleFrame.maxY - 16
         }
         
-        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
+        // Constrain height downwards so the panel never exceeds screen bottom (avoiding top jump)
+        let maxDownHeight = max(260, currentTop - (visibleFrame.minY + 16))
+        let finalHeight = min(fittingSize.height, maxDownHeight)
+        let targetY = currentTop - finalHeight
         
-        // Union with current frame so mouse detection never flags outside during animation
-        cachedPillRect = panel.frame.union(targetFrame).insetBy(dx: -50, dy: -40)
+        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: finalHeight)
+        
+        cachedPillRect = panel.frame.union(targetFrame)
+        
+        if !isDroppedDown || !panel.isVisible {
+            panel.setFrame(targetFrame, display: false)
+            pv.frame = NSRect(origin: .zero, size: fittingSize)
+            return
+        }
         
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.30
+            ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(targetFrame, display: false)
-            pv.animator().frame = NSRect(origin: .zero, size: fittingSize)
+            panel.animator().setFrame(targetFrame, display: true)
         }, completionHandler: { [weak self] in
             guard let self = self, let panel = self.pillPanel else { return }
-            self.cachedPillRect = panel.frame.insetBy(dx: -40, dy: -30)
+            self.cachedPillRect = panel.frame
         })
-        pv.needsLayout = true
     }
     
     private func repositionPanel() {
@@ -704,7 +726,7 @@ public final class FloatingPillWindowController: NSObject {
         let rightMargin: CGFloat = 16
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
-        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height).insetBy(dx: -40, dy: -30)
+        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
         panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
         pv.frame = NSRect(origin: .zero, size: fittingSize)
     }
