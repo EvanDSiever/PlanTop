@@ -6,8 +6,14 @@ public enum DisplayMode: Int {
     case menuBarOnly = 2
 }
 
+private final class PlanTopPanel: NSPanel {
+    override var canBecomeKey: Bool {
+        return true
+    }
+}
+
 public final class FloatingPillWindowController: NSObject {
-    private var pillPanel: NSPanel?
+    private var pillPanel: PlanTopPanel?
     private var pillView: FloatingPillView?
     
     // Dedicated background timer for cursor tracking (immune to main runloop freezes)
@@ -104,6 +110,7 @@ public final class FloatingPillWindowController: NSObject {
     
     // Card dragging state to prevent accidental dismissal during drag & reorder
     public var isDraggingCard: Bool = false
+    public var isEditingNotes: Bool = false
     
     public func togglePin() {
         isPinned.toggle()
@@ -263,7 +270,11 @@ public final class FloatingPillWindowController: NSObject {
             guard let self = self, !self.isPinned, !self.isDraggingCard else { return }
             guard self.isDroppedDown || (self.pillPanel?.isVisible ?? false) else { return }
             let mouseLoc = NSEvent.mouseLocation
-            if !self.isMouseInsidePanel(mouseLoc: mouseLoc) {
+            if let panel = self.pillPanel, !panel.frame.insetBy(dx: -4, dy: -4).contains(mouseLoc) {
+                if self.isEditingNotes {
+                    self.pillPanel?.makeFirstResponder(nil)
+                    self.isEditingNotes = false
+                }
                 self.retract(immediately: false)
             }
         }
@@ -277,7 +288,7 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     private func isMouseInsidePanel(mouseLoc: NSPoint) -> Bool {
-        if isDraggingCard { return true }
+        if isDraggingCard || isEditingNotes { return true }
         if let panel = pillPanel, panel.isVisible {
             return panel.frame.insetBy(dx: -4, dy: -4).contains(mouseLoc)
         }
@@ -288,14 +299,14 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     public func scheduleRetractIfNeeded(delay: TimeInterval = 0.25) {
-        guard !isPinned, !isDraggingCard else { return }
+        guard !isPinned, !isDraggingCard, !isEditingNotes else { return }
         guard isDroppedDown || (pillPanel?.isVisible ?? false) else { return }
         if retractTimer != nil { return }
         
         retractTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             self.retractTimer = nil
-            if self.isPinned || self.isDraggingCard { return }
+            if self.isPinned || self.isDraggingCard || self.isEditingNotes { return }
             
             let mouseLoc = NSEvent.mouseLocation
             if self.isMouseInsidePanel(mouseLoc: mouseLoc) {
@@ -314,12 +325,12 @@ public final class FloatingPillWindowController: NSObject {
     }
     
     private func checkMousePosition() {
-        guard isEnabled, !isPinned, !isDraggingCard else { return }
+        guard isEnabled, !isPinned, !isDraggingCard, !isEditingNotes else { return }
         
         let mouseLoc = NSEvent.mouseLocation
         
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.isEnabled, !self.isPinned, !self.isDraggingCard else { return }
+            guard let self = self, self.isEnabled, !self.isPinned, !self.isDraggingCard, !self.isEditingNotes else { return }
             
             let isPanelVisible = self.isDroppedDown || (self.pillPanel?.isVisible ?? false)
             
@@ -499,7 +510,7 @@ public final class FloatingPillWindowController: NSObject {
         let initialY = visibleFrame.midY - (initialH / 2) + 20
         let initialX = screenFrame.maxX - customPanelWidth - 16
         
-        let panel = NSPanel(
+        let panel = PlanTopPanel(
             contentRect: NSRect(x: initialX, y: initialY, width: customPanelWidth, height: initialH),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -562,6 +573,15 @@ public final class FloatingPillWindowController: NSObject {
                 self.isHoveringActive = true
             }
         }
+        pv.onNotesEditingStateChanged = { [weak self] isEditing in
+            guard let self = self else { return }
+            self.isEditingNotes = isEditing
+            if isEditing {
+                self.retractTimer?.invalidate()
+                self.retractTimer = nil
+                self.isHoveringActive = true
+            }
+        }
         
         panel.contentView = pv
         self.pillPanel = panel
@@ -612,6 +632,10 @@ public final class FloatingPillWindowController: NSObject {
         isManuallyOpened = false
         if isPinned && !immediately {
             return
+        }
+        if isEditingNotes {
+            pillPanel?.makeFirstResponder(nil)
+            isEditingNotes = false
         }
         stopGlobalClickMonitoring()
         guard let panel = pillPanel, let pv = pillView, isDroppedDown || panel.isVisible else { return }

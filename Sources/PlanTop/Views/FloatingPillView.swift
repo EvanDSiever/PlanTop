@@ -310,6 +310,173 @@ public final class ClockPanelView: NeumorphicDepressedCardView {
     }
 }
 
+// MARK: - Quick Notes Panel View (Underneath Clock & Date, Above Categories)
+public final class QuickNotesPanelView: NeumorphicDepressedCardView, NSTextViewDelegate {
+    override public var isFlipped: Bool { return true }
+    
+    public var onUserInteraction: (() -> Void)?
+    public var onEditingStateChanged: ((Bool) -> Void)?
+    public private(set) var isEditing: Bool = false
+    
+    // Header Bar
+    private let headerIconView = NSImageView()
+    private let headerTitleLabel = NSTextField(labelWithString: "QUICK NOTES")
+    private let clearButton = NSButton()
+    private let dividerView = NSView()
+    
+    // Text Editor
+    private let scrollView = NSScrollView()
+    private let textView = NSTextView()
+    private let placeholderLabel = NSTextField(labelWithString: "Write notes, reminders, or thoughts...")
+    
+    private let notesStorageKey = "plantop_panel_quick_notes"
+    
+    override public init(frame frameRect: NSRect = .zero) {
+        super.init(frame: frameRect)
+        setupViews()
+        loadPersistedNotes()
+    }
+    
+    required public init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupViews() {
+        cornerRadiusValue = 14
+        surfaceColor = NSColor.white
+        outlineWidth = 0.5
+        outlineColor = NeumorphicTheme.specularHighlightBorder
+        
+        // 1. Header Icon
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .semibold)
+        headerIconView.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "Notes")?.withSymbolConfiguration(iconConfig)
+        headerIconView.contentTintColor = NeumorphicTheme.accentColor
+        addSubview(headerIconView)
+        
+        // 2. Header Title
+        headerTitleLabel.isBezeled = false
+        headerTitleLabel.drawsBackground = false
+        headerTitleLabel.isEditable = false
+        headerTitleLabel.isSelectable = false
+        headerTitleLabel.font = NeumorphicTheme.avenirFont(ofSize: 10.5, weight: .heavy)
+        headerTitleLabel.textColor = NeumorphicTheme.textSecondary
+        addSubview(headerTitleLabel)
+        
+        // 3. Clear Button (Subtle icon on top right, visible when notes exist)
+        clearButton.isBordered = false
+        clearButton.setButtonType(.momentaryChange)
+        let clearConfig = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .regular)
+        clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear")?.withSymbolConfiguration(clearConfig)
+        clearButton.contentTintColor = NeumorphicTheme.textTertiary
+        clearButton.toolTip = "Clear notes"
+        clearButton.target = self
+        clearButton.action = #selector(handleClearNotes)
+        clearButton.isHidden = true
+        addSubview(clearButton)
+        
+        // 4. Subtle Hairline Divider
+        dividerView.wantsLayer = true
+        dividerView.layer?.backgroundColor = NeumorphicTheme.specularHighlightBorder.withAlphaComponent(0.4).cgColor
+        addSubview(dividerView)
+        
+        // 5. Scroll View & Text View
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.font = NeumorphicTheme.avenirFont(ofSize: 12.5, weight: .regular)
+        textView.textColor = NeumorphicTheme.textPrimary
+        textView.insertionPointColor = NeumorphicTheme.accentColor
+        textView.backgroundColor = .clear
+        textView.drawsBackground = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainerInset = NSSize(width: 0, height: 2)
+        textView.delegate = self
+        
+        scrollView.documentView = textView
+        addSubview(scrollView)
+        
+        // 6. Placeholder Label
+        placeholderLabel.isBezeled = false
+        placeholderLabel.drawsBackground = false
+        placeholderLabel.isEditable = false
+        placeholderLabel.isSelectable = false
+        placeholderLabel.font = NeumorphicTheme.avenirFont(ofSize: 12.5, weight: .regular)
+        placeholderLabel.textColor = NeumorphicTheme.textTertiary
+        addSubview(placeholderLabel)
+    }
+    
+    private func loadPersistedNotes() {
+        let saved = UserDefaults.standard.string(forKey: notesStorageKey) ?? ""
+        textView.string = saved
+        placeholderLabel.isHidden = !saved.isEmpty
+        clearButton.isHidden = saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    @objc private func handleClearNotes() {
+        textView.string = ""
+        UserDefaults.standard.removeObject(forKey: notesStorageKey)
+        placeholderLabel.isHidden = false
+        clearButton.isHidden = true
+        onUserInteraction?()
+    }
+    
+    // MARK: - NSTextViewDelegate
+    public func textDidChange(_ notification: Notification) {
+        let text = textView.string
+        UserDefaults.standard.set(text, forKey: notesStorageKey)
+        placeholderLabel.isHidden = !text.isEmpty
+        clearButton.isHidden = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        onUserInteraction?()
+    }
+    
+    public func textDidBeginEditing(_ notification: Notification) {
+        isEditing = true
+        onEditingStateChanged?(true)
+        onUserInteraction?()
+    }
+    
+    public func textDidEndEditing(_ notification: Notification) {
+        isEditing = false
+        onEditingStateChanged?(false)
+    }
+    
+    override public func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        window?.makeFirstResponder(textView)
+        onUserInteraction?()
+    }
+    
+    override public func layout() {
+        super.layout()
+        let w = bounds.width
+        let h = bounds.height
+        guard w > 0 && h > 0 else { return }
+        
+        // Header (y: 6, height: 16)
+        headerIconView.frame = NSRect(x: 12, y: 7, width: 12, height: 12)
+        headerTitleLabel.frame = NSRect(x: 28, y: 5, width: 120, height: 15)
+        clearButton.frame = NSRect(x: w - 24, y: 6, width: 14, height: 14)
+        
+        // Hairline Divider
+        dividerView.frame = NSRect(x: 10, y: 23, width: max(0, w - 20), height: 0.5)
+        
+        // Editor Scroll View
+        let contentY: CGFloat = 26
+        let contentH = max(10, h - contentY - 6)
+        scrollView.frame = NSRect(x: 12, y: contentY, width: max(0, w - 24), height: contentH)
+        textView.frame = NSRect(x: 0, y: 0, width: max(0, w - 24), height: contentH)
+        
+        placeholderLabel.frame = NSRect(x: 14, y: contentY + 2, width: max(0, w - 28), height: 18)
+    }
+}
+
 public final class FloatingPillView: NSView {
     override public var isFlipped: Bool { return true }
     private let clipContainer = NSView()
@@ -325,6 +492,9 @@ public final class FloatingPillView: NSView {
     // Dedicated Separate Clock Panel (Above Calendar Panel, Full Width)
     private let clockPanel = ClockPanelView()
     
+    // Quick Notes Panel (Underneath Clock & Date, Above Category Switcher)
+    private let notesPanel = QuickNotesPanelView()
+    
     // Calendar Panel with Neumorphic Switcher
     private let calendarPanel = CalendarPanelView(dayMode: .today)
     
@@ -332,6 +502,7 @@ public final class FloatingPillView: NSView {
     public var preferredPanelWidth: CGFloat = 340
     public var onResizeWidthChanged: ((CGFloat) -> Void)?
     public var onResizeCompleted: (() -> Void)?
+    public var onNotesEditingStateChanged: ((Bool) -> Void)?
     private var isDraggingResize: Bool = false
     private var dragStartMouseX: CGFloat = 0
     private var dragStartWidth: CGFloat = 0
@@ -395,7 +566,16 @@ public final class FloatingPillView: NSView {
         // 1. Dedicated Large Clock Panel (occupies the top of the panel)
         masterPanel.contentView.addSubview(clockPanel)
         
-        // 2. Integrated Calendar Panel
+        // 2. Quick Notes Panel (Underneath Clock & Date, Above Categories)
+        notesPanel.onUserInteraction = { [weak self] in
+            self?.onUserInteraction?()
+        }
+        notesPanel.onEditingStateChanged = { [weak self] isEditing in
+            self?.onNotesEditingStateChanged?(isEditing)
+        }
+        masterPanel.contentView.addSubview(notesPanel)
+        
+        // 3. Integrated Calendar Panel
         calendarPanel.onHeightChanged = { [weak self] in
             self?.needsLayout = true
             self?.onHeightChanged?()
@@ -571,16 +751,18 @@ public final class FloatingPillView: NSView {
         let width = max(260, min(650, preferredPanelWidth))
         let panelW = max(200, width - 8)
         let clockH: CGFloat = 120
+        let notesH: CGFloat = 82
         let calH = calendarPanel.calculateFittingHeight(forWidth: panelW)
         let screenMaxH: CGFloat = (NSScreen.main?.visibleFrame.height ?? 800) - 80
-        let totalH = min(screenMaxH, max(340, clockH + calH + 24))
+        let totalH = min(screenMaxH, max(380, clockH + notesH + calH + 32))
         return NSSize(width: width, height: totalH)
     }
     
     public func calculatePanelHeight(forWidth cardW: CGFloat) -> CGFloat {
         let clockH: CGFloat = 120
+        let notesH: CGFloat = 82
         let calH = calendarPanel.calculateFittingHeight(forWidth: cardW)
-        return clockH + calH + 24
+        return clockH + notesH + calH + 32
     }
     
     public override func layout() {
@@ -606,8 +788,13 @@ public final class FloatingPillView: NSView {
         let clockY: CGFloat = 10
         clockPanel.frame = NSRect(x: 14, y: clockY, width: max(0, cardW - 28), height: clockH)
         
-        // 2. Calendar panel occupies space below clock panel
-        let calY = clockY + clockH + 8
+        // 2. Quick Notes Panel (Underneath Clock/Date, Above Category Selection)
+        let notesH: CGFloat = 82
+        let notesY = clockY + clockH + 8
+        notesPanel.frame = NSRect(x: 14, y: notesY, width: max(0, cardW - 28), height: notesH)
+        
+        // 3. Calendar panel occupies space below notes panel
+        let calY = notesY + notesH + 8
         let calH = max(0, cardH - calY - 6)
         calendarPanel.frame = NSRect(x: 0, y: calY, width: cardW, height: calH)
         
