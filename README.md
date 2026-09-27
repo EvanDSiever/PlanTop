@@ -21,11 +21,12 @@
 **PlanTop** is a lightweight, stealth macOS daily planner and schedule companion built in pure Swift and AppKit. It integrates directly into macOS without cluttering your Dock:
 
 1. **Right-Edge Hover Side Panel**: Move your cursor to the right edge of your screen to smoothly slide out your daily schedule, active countdowns, and upcoming tasks.
-2. **Google Calendar Activity Hub**: View your schedule organized cleanly across **Classes**, **Today**, and **Tomorrow** tabs.
-3. **Custom Class Detectors**: Define custom keywords (e.g. `Class IEL, Alfatih, Lecture, Lab`) to automatically categorize academic lectures and discussions.
-4. **Interactive Meeting & Calendar Links**: One-click launch for Google Meet, Zoom, Teams, or direct calendar event entries.
-5. **Menu Bar Live Glance**: Displays your active event (`[NOW] Lecture`) or upcoming start time in the macOS menu bar with a quick schedule dropdown.
-6. **Futuristic Typography & White-Orange Theme**: Signature vibrant orange accents with large futuristic time badges (Alien League, Futura) and clean borderless white ceramic card surfaces.
+2. **Google Calendar Activity Hub**: View your schedule organized cleanly across **Classes**, **Tasks** (Homework & Reports), **Today**, and **Tomorrow** tabs.
+3. **Custom Class & Task Detectors**: Define custom keywords to categorize academic lectures, or use `REPORT` and `HOMEWORK` prefixes to automatically route assignments and project milestones. Tasks are strictly limited to the current week (starting on Monday at 00:00:00 and ending on Sunday at 23:59:59). For tasks occurring today, live countdown timers are kept on; for future tasks within the week, the scheduled occurrence date is shown directly underneath the title. Recurring and repeated tasks across weeks automatically deduplicate to keep only the current week's upcoming instance.
+4. **Instant Quick Notes with Rich Formatting & Lists**: Zero-friction writing space directly below the clock with title bar removed for instant typing. Supports bullet points (`- ` / `• `), numbered lists (`1. `), bold (`**...**`), italic (`*...*`), smart Return auto-continuation, live markdown syntax styling, and larger 14.5pt Avenir typography.
+5. **Interactive Meeting & Calendar Links**: One-click launch for Google Meet, Zoom, Teams, or direct calendar event entries.
+6. **Menu Bar Live Glance**: Displays your active event (`[NOW] Lecture`) or upcoming start time in the macOS menu bar with a quick schedule dropdown.
+7. **Apple HIG-Inspired Liquid Glass Design**: Translucent Liquid Glass materials (`NSVisualEffectView` HUD vibrance), single SF Pro system typography family with monospaced digits, 8pt layout grid, 44pt hit targets, and fully adaptive semantic system colors (`systemBlue`, `label`, `systemBackground`).
 
 ---
 
@@ -74,13 +75,22 @@ PlanTop runs as a native macOS **Accessory (`LSUIElement`)**. It never takes up 
 - Any calendar event with matching keywords automatically routes to your dedicated **Classes** tab.
 - Click any event card in the panel to expand details (time span, location, notes, and direct Google Meet button).
 
-### 5. Appearance & Color Customization
-- Open Settings to customize:
-  - **Accent Colors**: Orange (`#FF700D`), Coral, Blue, Green, Purple, or pick custom colors using the native color picker.
-  - **Time Font**: Choose between Alien League Condensed, Alien League Regular, Futura Condensed Light, SF Pro Rounded, and Monospaced.
-  - **App Typography**: Toggle between SF Pro Rounded, System Default, Monospaced, and Serif.
+### 5. Instant Quick Notes with Rich Formatting & Lists
+- **Instant Writing**: Click anywhere in the notes card to start typing immediately with zero header clutter.
+- **Larger Font Size**: Upgraded from 12.5pt to 14.5pt Avenir typography for clear readability.
+- **Lists & Formatting**:
+  - Type `- ` or `• ` for bullet points, and `1. ` for numbered lists. `Return` auto-continues lists, and `Return` on an empty line cleanly exits the list.
+  - Wrap words in `**bold**` or `*italic*`, or use keyboard shortcuts `Cmd + B` and `Cmd + I`.
+  - Use the bottom mini-toolbar for quick one-click formatting (`•`, `1.`, `B`, `I`, and Clear).
+  - All notes are auto-saved to persistent storage.
 
-### 6. Run at Startup (Launch at Login)
+### 6. Appearance & Color Customization
+- Open Settings to customize:
+  - **Accent Colors**: Apple System Blue (`#007AFF`), Purple (`#AF52DE`), Green (`#34C759`), Orange (`#FF9500`), Red (`#FF3B30`), or pick custom colors using the native color picker.
+  - **Time Font**: Choose between SF Pro Monospaced Digits (Default), SF Pro Rounded, SF Mono, Futura Condensed Light, and Alien League.
+  - **App Typography**: Toggle between SF Pro (System Default), SF Pro Rounded, SF Mono, Avenir, and System Serif.
+
+### 7. Run at Startup (Launch at Login)
 - Open PlanTop Settings.
 - Under **System & Menu Bar Integration**, check **Launch PlanTop automatically at login**.
 

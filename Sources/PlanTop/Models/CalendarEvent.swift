@@ -11,45 +11,45 @@ public enum EventUrgencyLevel {
     public var accentColor: NSColor {
         switch self {
         case .active:
-            return NeumorphicTheme.activeText
+            return AppleTheme.danger
         case .urgent:
-            return NeumorphicTheme.urgentText
+            return AppleTheme.danger
         case .almostUrgent:
-            return NeumorphicTheme.almostUrgentText
+            return AppleTheme.primary
         case .notUrgent:
-            return NeumorphicTheme.notUrgentText
+            return AppleTheme.primary
         case .neutral:
-            return NeumorphicTheme.textSecondary
+            return AppleTheme.secondaryLabel
         }
     }
     
     public var pillBackground: NSColor {
         switch self {
         case .active:
-            return NeumorphicTheme.activePill
+            return AppleTheme.danger
         case .urgent:
-            return NeumorphicTheme.urgentPill
+            return AppleTheme.danger
         case .almostUrgent:
-            return NeumorphicTheme.almostUrgentPill
+            return AppleTheme.primary
         case .notUrgent:
-            return NeumorphicTheme.notUrgentPill
+            return AppleTheme.insetWell
         case .neutral:
-            return NeumorphicTheme.classNeutralPill
+            return AppleTheme.insetWell
         }
     }
     
     public var pillBorder: NSColor {
         switch self {
         case .active:
-            return NeumorphicTheme.activeHairline
+            return AppleTheme.danger.withAlphaComponent(0.3)
         case .urgent:
-            return NeumorphicTheme.urgentHairline
+            return AppleTheme.danger.withAlphaComponent(0.3)
         case .almostUrgent:
-            return NeumorphicTheme.almostUrgentHairline
+            return AppleTheme.primary.withAlphaComponent(0.3)
         case .notUrgent:
-            return NeumorphicTheme.notUrgentHairline
+            return AppleTheme.cardBorder
         case .neutral:
-            return NeumorphicTheme.classNeutralHairline
+            return AppleTheme.cardBorder
         }
     }
     
@@ -62,31 +62,24 @@ public enum EventUrgencyLevel {
         case .active, .urgent:
             return .white
         case .almostUrgent, .notUrgent, .neutral:
-            return NeumorphicTheme.textSecondary
+            return AppleTheme.secondaryLabel
         }
     }
     
     public var blockBackground: NSColor {
-        switch self {
-        case .active:
-            return NSColor(red: 1.0, green: 0.94, blue: 0.94, alpha: 1.0)
-        case .urgent:
-            return NSColor(red: 1.0, green: 0.965, blue: 0.95, alpha: 1.0)
-        case .almostUrgent, .notUrgent, .neutral:
-            return NeumorphicTheme.cardElevated
-        }
+        return AppleTheme.cardBackground
     }
     
     public var blockBorder: NSColor {
-        return .clear
+        return AppleTheme.cardBorder
     }
     
     public var titleTextColor: NSColor {
         switch self {
         case .active:
-            return NeumorphicTheme.activeText
+            return AppleTheme.danger
         case .urgent, .almostUrgent, .notUrgent, .neutral:
-            return NeumorphicTheme.textPrimary
+            return AppleTheme.label
         }
     }
 }
@@ -103,6 +96,9 @@ public struct CalendarEvent: Identifiable, Equatable {
     public let calendarName: String
     public let calendarColor: NSColor
     public let sourceAccount: String
+    public let isRecurring: Bool
+    public let recurrenceKey: String?
+    public let externalIdentifier: String?
     
     public init(
         id: String = UUID().uuidString,
@@ -115,7 +111,10 @@ public struct CalendarEvent: Identifiable, Equatable {
         url: URL? = nil,
         calendarName: String = "Google Calendar",
         calendarColor: NSColor = NSColor(red: 0.26, green: 0.52, blue: 0.96, alpha: 1.0),
-        sourceAccount: String = "evandsiever@gmail.com"
+        sourceAccount: String = "evandsiever@gmail.com",
+        isRecurring: Bool = false,
+        recurrenceKey: String? = nil,
+        externalIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Event" : title
@@ -128,6 +127,9 @@ public struct CalendarEvent: Identifiable, Equatable {
         self.calendarName = calendarName
         self.calendarColor = calendarColor
         self.sourceAccount = sourceAccount
+        self.isRecurring = isRecurring
+        self.recurrenceKey = recurrenceKey
+        self.externalIdentifier = externalIdentifier
     }
     
     public var isHappeningNow: Bool {
@@ -187,11 +189,57 @@ public struct CalendarEvent: Identifiable, Equatable {
         return isClassOrAlfatih
     }
     
+    public var hasReportOrHomeworkPrefix: Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stripped = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "[](){}:-–—#* \t"))
+        let lowerStripped = stripped.lowercased()
+        
+        if lowerStripped.hasPrefix("report") {
+            if lowerStripped.count == 6 { return true }
+            let nextChar = lowerStripped[lowerStripped.index(lowerStripped.startIndex, offsetBy: 6)]
+            if !nextChar.isLetter || nextChar.isWhitespace || nextChar.isNumber {
+                return true
+            }
+        }
+        
+        if lowerStripped.hasPrefix("homework") {
+            if lowerStripped.count == 8 { return true }
+            let nextChar = lowerStripped[lowerStripped.index(lowerStripped.startIndex, offsetBy: 8)]
+            if !nextChar.isLetter || nextChar.isWhitespace || nextChar.isNumber {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    public var isReportOrHomework: Bool {
+        if hasReportOrHomeworkPrefix {
+            return true
+        }
+        let lower = title.lowercased()
+        let identifierStr = UserDefaults.standard.string(forKey: "plantop_task_identifiers")
+            ?? UserDefaults.standard.string(forKey: "calendarTaskIdentifiers")
+        if let identifierStr = identifierStr {
+            let keywords = identifierStr
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+            for kw in keywords {
+                let stripped = lower.trimmingCharacters(in: CharacterSet(charactersIn: "[](){}:-–—#* \t"))
+                if stripped.hasPrefix(kw) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+    
     public func urgencyLevel(relativeTo now: Date = Date()) -> EventUrgencyLevel {
         if startDate <= now && now <= endDate {
             return .active
         }
-        if isPast || isClassOrAlfatih {
+        if isPast || isClassOrAlfatih || isReportOrHomework {
             return .neutral
         }
         let diff = startDate.timeIntervalSince(now)
@@ -240,7 +288,7 @@ public struct CalendarEvent: Identifiable, Equatable {
     }
     
     public func shouldBlink(relativeTo now: Date = Date()) -> Bool {
-        guard !isClassOrAlfatih && !isHappeningNow && !isPast else { return false }
+        guard !isClassOrAlfatih && !isReportOrHomework && !isHappeningNow && !isPast else { return false }
         let diff = startDate.timeIntervalSince(now)
         return diff > 0 && diff <= 1800 // Within 30 minutes
     }
@@ -369,6 +417,53 @@ public struct CalendarEvent: Identifiable, Equatable {
         }
     }
     
+    /// Returns true if this event is currently active, starts today, ends today, or spans across today.
+    public func isHappeningOrDueToday(relativeTo now: Date = Date()) -> Bool {
+        let cal = Calendar.current
+        if cal.isDateInToday(startDate) || cal.isDateInToday(endDate) || isHappeningNow {
+            return true
+        }
+        let startOfToday = cal.startOfDay(for: now)
+        guard let startOfTomorrow = cal.date(byAdding: .day, value: 1, to: startOfToday) else {
+            return false
+        }
+        return startDate < startOfTomorrow && endDate >= startOfToday
+    }
+    
+    /// Formatted date on which the event is scheduled to occur (e.g. "Thursday, Sep 24" or "Tomorrow, Sep 24")
+    public func occurrenceDateString(relativeTo now: Date = Date(), compact: Bool = false) -> String {
+        let cal = Calendar.current
+        let targetDate = startDate
+        let dayFmt = DateFormatter()
+        
+        if cal.isDateInToday(targetDate) {
+            return "Today"
+        }
+        
+        if cal.isDateInTomorrow(targetDate) {
+            if compact {
+                return "Tomorrow"
+            } else {
+                dayFmt.dateFormat = "MMM d"
+                return "Tomorrow, \(dayFmt.string(from: targetDate))"
+            }
+        }
+        
+        let currentYear = cal.component(.year, from: now)
+        let eventYear = cal.component(.year, from: targetDate)
+        
+        if compact {
+            dayFmt.dateFormat = "EEE, MMM d"
+        } else {
+            if currentYear == eventYear {
+                dayFmt.dateFormat = "EEEE, MMM d"
+            } else {
+                dayFmt.dateFormat = "EEE, MMM d, yyyy"
+            }
+        }
+        return dayFmt.string(from: targetDate)
+    }
+    
     public var relativeStatusText: String {
         let now = Date()
         if isHappeningNow {
@@ -445,6 +540,291 @@ public struct CalendarEvent: Identifiable, Equatable {
     }
     
     public var webCalendarURL: URL? {
-        return url
+        return googleCalendarURL
+    }
+    
+    /// Generates the direct web Google Calendar link for this specific event.
+    public var googleCalendarURL: URL {
+        // 1. Direct URL check: if event.url is already a Google Calendar link
+        if let direct = url, let host = direct.host?.lowercased(), host.contains("google.com"), direct.absoluteString.contains("calendar") {
+            return direct
+        }
+        
+        // 2. Check notes for an embedded Google Calendar link (common in Google invites)
+        if let notes = notes {
+            if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+                let matches = detector.matches(in: notes, options: [], range: NSRange(location: 0, length: (notes as NSString).length))
+                for match in matches {
+                    if let u = match.url, let host = u.host?.lowercased(), host.contains("google.com"), u.absoluteString.contains("calendar") {
+                        return u
+                    }
+                }
+            }
+        }
+        
+        let email = sourceAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userPrefix: String = (email.contains("@") && email.contains(".")) ? "u/\(email)/" : ""
+        
+        // 3. Construct direct event edit link from externalIdentifier or recurrenceKey
+        if let extId = externalIdentifier ?? recurrenceKey, !extId.isEmpty {
+            let cleanId: String
+            if extId.contains("@google.com") {
+                cleanId = extId.components(separatedBy: "@google.com").first ?? extId
+            } else if extId.contains("@") {
+                cleanId = extId.components(separatedBy: "@").first ?? extId
+            } else {
+                cleanId = extId
+            }
+            
+            let isAppleUUID = cleanId.contains("-") && cleanId.count == 36
+            let isLikelyGoogleUID = extId.contains("@google.com") || (!isAppleUUID && cleanId.count >= 16 && cleanId.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil)
+            
+            if !cleanId.isEmpty && !isAppleUUID && isLikelyGoogleUID {
+                let payload: String
+                if email.contains("@group.calendar.google.com") {
+                    let userPart = email.replacingOccurrences(of: "@group.calendar.google.com", with: "@g")
+                    payload = "\(cleanId) \(userPart)"
+                } else if email.contains("@") {
+                    payload = "\(cleanId) \(email)"
+                } else {
+                    payload = cleanId
+                }
+                
+                if let data = payload.data(using: .utf8) {
+                    let b64 = data.base64EncodedString()
+                        .replacingOccurrences(of: "=", with: "")
+                        .replacingOccurrences(of: "+", with: "-")
+                        .replacingOccurrences(of: "/", with: "_")
+                    
+                    if let u = URL(string: "https://calendar.google.com/calendar/\(userPrefix)r/eventedit/\(b64)") {
+                        return u
+                    }
+                }
+            }
+        }
+        
+        // 4. Fallback: Search for the event title in Google Calendar
+        if let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !encodedTitle.isEmpty {
+            if let searchURL = URL(string: "https://calendar.google.com/calendar/\(userPrefix)r/search?q=\(encodedTitle)") {
+                return searchURL
+            }
+        }
+        
+        // 5. Ultimate fallback: Open Google Calendar on the day of the event
+        let cal = Calendar.current
+        let year = cal.component(.year, from: startDate)
+        let month = cal.component(.month, from: startDate)
+        let day = cal.component(.day, from: startDate)
+        return URL(string: "https://calendar.google.com/calendar/\(userPrefix)r/day/\(year)/\(month)/\(day)") ?? URL(string: "https://calendar.google.com")!
+    }
+    
+    /// Formats raw notes or event description containing HTML (from Google Calendar) or Markdown syntax
+    /// into a clean, beautifully styled NSAttributedString without showing raw markup tags.
+    public static func formatNotesAttributedString(
+        _ raw: String,
+        baseFontSize: CGFloat = 13.0,
+        textColor: NSColor = AppleTheme.label,
+        linkColor: NSColor = AppleTheme.primary
+    ) -> NSAttributedString {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return NSAttributedString() }
+        
+        // 1. Convert block HTML tags and line breaks
+        var text = trimmed
+        let lineBreakPatterns: [(pattern: String, replacement: String)] = [
+            ("(?i)<br\\s*/?>", "\n"),
+            ("(?i)</p\\s*>", "\n\n"),
+            ("(?i)<p\\s*>", ""),
+            ("(?i)<li\\s*>", "\n• "),
+            ("(?i)</li\\s*>", ""),
+            ("(?i)</?(?:ul|ol|div|blockquote)[^>]*>", "\n")
+        ]
+        for item in lineBreakPatterns {
+            if let regex = try? NSRegularExpression(pattern: item.pattern) {
+                text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(location: 0, length: (text as NSString).length), withTemplate: item.replacement)
+            }
+        }
+        
+        // 2. Decode standard HTML entities
+        let entities: [(encoded: String, decoded: String)] = [
+            ("&amp;", "&"),
+            ("&lt;", "<"),
+            ("&gt;", ">"),
+            ("&quot;", "\""),
+            ("&#39;", "'"),
+            ("&apos;", "'"),
+            ("&nbsp;", " ")
+        ]
+        for entity in entities {
+            text = text.replacingOccurrences(of: entity.encoded, with: entity.decoded)
+        }
+        
+        // Decode numeric entities (e.g. &#65;)
+        if let numEntityRegex = try? NSRegularExpression(pattern: "&#(\\d+);") {
+            let nsText = text as NSString
+            let matches = numEntityRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+            for match in matches.reversed() {
+                let codeStr = nsText.substring(with: match.range(at: 1))
+                if let code = UInt32(codeStr), let scalar = UnicodeScalar(code) {
+                    let charStr = String(Character(scalar))
+                    text = (text as NSString).replacingCharacters(in: match.range, with: charStr)
+                }
+            }
+        }
+        
+        // 3. Normalize multiple newlines (no more than 2 consecutive newlines)
+        if let multiNL = try? NSRegularExpression(pattern: "\n{3,}") {
+            text = multiNL.stringByReplacingMatches(in: text, options: [], range: NSRange(location: 0, length: (text as NSString).length), withTemplate: "\n\n")
+        }
+        
+        // Base fonts
+        let regularFont = AppleTheme.font(size: baseFontSize, weight: .regular)
+        let boldFont = AppleTheme.font(size: baseFontSize, weight: .bold)
+        let italicFont = NSFontManager.shared.convert(regularFont, toHaveTrait: .italicFontMask)
+        let linkFont = AppleTheme.font(size: baseFontSize, weight: .medium)
+        
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 2.0
+        
+        let attr = NSMutableAttributedString(string: text, attributes: [
+            .font: regularFont,
+            .foregroundColor: textColor,
+            .paragraphStyle: paragraphStyle
+        ])
+        
+        // Helper to iteratively parse and replace tag patterns with formatted inner text
+        func processTagPattern(regexPattern: String, isLink: Bool = false, isBold: Bool = false, isItalic: Bool = false, isUnderline: Bool = false) {
+            guard let regex = try? NSRegularExpression(pattern: regexPattern, options: [.caseInsensitive]) else { return }
+            var searchRange = NSRange(location: 0, length: attr.length)
+            while searchRange.location < attr.length,
+                  let match = regex.firstMatch(in: attr.string, options: [], range: searchRange) {
+                let fullRange = match.range
+                let ns = attr.string as NSString
+                
+                let innerText: String
+                var linkURL: URL? = nil
+                
+                if isLink {
+                    if match.numberOfRanges >= 3 {
+                        let g1 = ns.substring(with: match.range(at: 1))
+                        let g2 = ns.substring(with: match.range(at: 2))
+                        if g1.hasPrefix("http://") || g1.hasPrefix("https://") || g1.hasPrefix("mailto:") {
+                            linkURL = URL(string: g1)
+                            innerText = g2.isEmpty ? g1 : g2
+                        } else {
+                            linkURL = URL(string: g2)
+                            innerText = g1.isEmpty ? g2 : g1
+                        }
+                    } else if match.numberOfRanges == 2 {
+                        let g1 = ns.substring(with: match.range(at: 1))
+                        linkURL = URL(string: g1)
+                        innerText = g1
+                    } else {
+                        innerText = ns.substring(with: fullRange)
+                    }
+                } else {
+                    if match.numberOfRanges >= 2 {
+                        innerText = ns.substring(with: match.range(at: 1))
+                    } else {
+                        innerText = ns.substring(with: fullRange)
+                    }
+                }
+                
+                attr.replaceCharacters(in: fullRange, with: innerText)
+                let newRange = NSRange(location: fullRange.location, length: (innerText as NSString).length)
+                
+                if isBold {
+                    attr.addAttribute(.font, value: boldFont, range: newRange)
+                }
+                if isItalic {
+                    attr.addAttribute(.font, value: italicFont, range: newRange)
+                }
+                if isUnderline {
+                    attr.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: newRange)
+                }
+                if let url = linkURL {
+                    attr.addAttribute(.link, value: url, range: newRange)
+                    attr.addAttribute(.foregroundColor, value: linkColor, range: newRange)
+                    attr.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: newRange)
+                    attr.addAttribute(.font, value: linkFont, range: newRange)
+                }
+                
+                let nextLoc = fullRange.location + newRange.length
+                searchRange = NSRange(location: nextLoc, length: attr.length - nextLoc)
+            }
+        }
+        
+        // 4. Extract HTML Links: <a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>
+        processTagPattern(regexPattern: "<a\\s+[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", isLink: true)
+        
+        // 5. Extract Markdown Links: \[([^\]]+)\]\(((?:https?://|mailto:)[^\)]+)\)
+        processTagPattern(regexPattern: "\\[([^\\]]+)\\]\\(((?:https?://|mailto:)[^\\)]+)\\)", isLink: true)
+        
+        // 6. Extract HTML Bold: <b>...</b>, <strong>...</strong>
+        processTagPattern(regexPattern: "<(?:b|strong)>(.*?)</(?:b|strong)>", isBold: true)
+        
+        // 7. Extract Markdown Bold: **...** and __...__
+        processTagPattern(regexPattern: "(?:\\*\\*|__)(.+?)(?:\\*\\*|__)", isBold: true)
+        
+        // 8. Extract HTML Italic: <i>...</i>, <em>...</em>
+        processTagPattern(regexPattern: "<(?:i|em)>(.*?)</(?:i|em)>", isItalic: true)
+        
+        // 9. Extract Markdown Italic: *...* and _..._
+        processTagPattern(regexPattern: "(?<!\\*)\\*(?!\\*)([^\\*\\n]+?)(?<!\\*)\\*(?!\\*)", isItalic: true)
+        processTagPattern(regexPattern: "(?<!_)_(?!_)([^_\\n]+?)(?<!_)_(?!_)", isItalic: true)
+        
+        // 10. Extract HTML Underline: <u>...</u>
+        processTagPattern(regexPattern: "<u>(.*?)</u>", isUnderline: true)
+        
+        // 11. Strip any remaining or unknown HTML tags: <[^>]+>
+        if let leftoverHTML = try? NSRegularExpression(pattern: "<[^>]+>") {
+            var searchRange = NSRange(location: 0, length: attr.length)
+            while searchRange.location < attr.length,
+                  let match = leftoverHTML.firstMatch(in: attr.string, options: [], range: searchRange) {
+                attr.replaceCharacters(in: match.range, with: "")
+                searchRange = NSRange(location: match.range.location, length: attr.length - match.range.location)
+            }
+        }
+        
+        // 12. Auto-linkify plain URLs (https://... or http://...) that don't already have a .link attribute
+        if let urlDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+            let fullRange = NSRange(location: 0, length: attr.length)
+            for match in urlDetector.matches(in: attr.string, options: [], range: fullRange) {
+                guard let url = match.url else { continue }
+                var hasLink = false
+                attr.enumerateAttribute(.link, in: match.range, options: []) { val, _, stop in
+                    if val != nil {
+                        hasLink = true
+                        stop.pointee = true
+                    }
+                }
+                if !hasLink {
+                    attr.addAttribute(.link, value: url, range: match.range)
+                    attr.addAttribute(.foregroundColor, value: linkColor, range: match.range)
+                    attr.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
+                    attr.addAttribute(.font, value: linkFont, range: match.range)
+                }
+            }
+        }
+        
+        // 13. Trim leading/trailing whitespace & newlines from attributed string
+        while attr.length > 0 {
+            let firstChar = (attr.string as NSString).substring(to: 1)
+            if firstChar == " " || firstChar == "\n" || firstChar == "\t" || firstChar == "\r" {
+                attr.deleteCharacters(in: NSRange(location: 0, length: 1))
+            } else {
+                break
+            }
+        }
+        while attr.length > 0 {
+            let lastChar = (attr.string as NSString).substring(from: attr.length - 1)
+            if lastChar == " " || lastChar == "\n" || lastChar == "\t" || lastChar == "\r" {
+                attr.deleteCharacters(in: NSRange(location: attr.length - 1, length: 1))
+            } else {
+                break
+            }
+        }
+        
+        return attr
     }
 }

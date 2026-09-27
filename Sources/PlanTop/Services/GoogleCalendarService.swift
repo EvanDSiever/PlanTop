@@ -23,6 +23,8 @@ public final class GoogleCalendarService: ObservableObject {
     public static let shared = GoogleCalendarService()
     
     @Published public private(set) var classesEvents: [CalendarEvent] = []
+    @Published public private(set) var tasksEvents: [CalendarEvent] = []
+    public var reportsEvents: [CalendarEvent] { return tasksEvents }
     @Published public private(set) var todaysEvents: [CalendarEvent] = []
     @Published public private(set) var tomorrowsEvents: [CalendarEvent] = []
     @Published public private(set) var dismissedEventIds: Set<String> = []
@@ -30,6 +32,7 @@ public final class GoogleCalendarService: ObservableObject {
     @Published public private(set) var lastSyncDate: Date?
     
     private var customOrderClasses: [String] = []
+    private var customOrderTasks: [String] = []
     private var customOrderToday: [String] = []
     private var customOrderTomorrow: [String] = []
     
@@ -96,6 +99,9 @@ public final class GoogleCalendarService: ObservableObject {
             self.dismissedEventIds = Set(dismissed)
         }
         self.customOrderClasses = UserDefaults.standard.stringArray(forKey: "plantop_order_classes") ?? []
+        self.customOrderTasks = UserDefaults.standard.stringArray(forKey: "plantop_order_tasks")
+            ?? UserDefaults.standard.stringArray(forKey: "plantop_order_reports")
+            ?? []
         self.customOrderToday = UserDefaults.standard.stringArray(forKey: "plantop_order_today") ?? []
         self.customOrderTomorrow = UserDefaults.standard.stringArray(forKey: "plantop_order_tomorrow") ?? []
         
@@ -160,10 +166,69 @@ public final class GoogleCalendarService: ObservableObject {
         }
     }
     
+    /// Returns the date range for the current week starting on Monday at 00:00:00 and ending on Sunday at 23:59:59 (next Monday 00:00:00).
+    public static func currentWeekInterval(for date: Date = Date()) -> (start: Date, end: Date) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Monday is start of week
+        cal.timeZone = TimeZone.current
+        if let interval = cal.dateInterval(of: .weekOfYear, for: date) {
+            return (interval.start, interval.end)
+        }
+        let weekday = cal.component(.weekday, from: date)
+        let daysFromMonday = (weekday + 5) % 7
+        let startOfDay = cal.startOfDay(for: date)
+        let monday = cal.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
+        let nextMonday = cal.date(byAdding: .day, value: 7, to: monday) ?? monday.addingTimeInterval(7 * 86400)
+        return (monday, nextMonday)
+    }
+    
+    /// Deduplicates recurring events and repeated events with matching titles so that only one set/instance is displayed.
+    /// Prioritizes the active or next upcoming instance; falls back to the earliest instance if all have ended.
+    public static func deduplicateRecurringEvents(_ events: [CalendarEvent], relativeTo now: Date = Date()) -> [CalendarEvent] {
+        var groups: [String: [CalendarEvent]] = [:]
+        var groupOrder: [String] = []
+        
+        for event in events {
+            let normalizedTitle = event.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let key = event.recurrenceKey ?? normalizedTitle
+            
+            if groups[key] == nil {
+                groups[key] = []
+                groupOrder.append(key)
+            }
+            groups[key]?.append(event)
+        }
+        
+        var chosen: [CalendarEvent] = []
+        for key in groupOrder {
+            guard let instances = groups[key], !instances.isEmpty else { continue }
+            if instances.count == 1 {
+                chosen.append(instances[0])
+                continue
+            }
+            
+            let sortedInstances = instances.sorted { $0.startDate < $1.startDate }
+            if let active = sortedInstances.first(where: { $0.isHappeningNow }) {
+                chosen.append(active)
+            } else if let nextUpcoming = sortedInstances.first(where: { $0.endDate >= now }) {
+                chosen.append(nextUpcoming)
+            } else {
+                chosen.append(sortedInstances.last!)
+            }
+        }
+        
+        return chosen.sorted {
+            if $0.isAllDay && !$1.isAllDay { return true }
+            if !$0.isAllDay && $1.isAllDay { return false }
+            return $0.startDate < $1.startDate
+        }
+    }
+    
     public func dismissEvent(id: String) {
         dismissedEventIds.insert(id)
         UserDefaults.standard.set(Array(dismissedEventIds), forKey: "plantop_dismissed_event_ids")
         classesEvents.removeAll { $0.id == id }
+        tasksEvents.removeAll { $0.id == id }
         todaysEvents.removeAll { $0.id == id }
         tomorrowsEvents.removeAll { $0.id == id }
         NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
@@ -180,6 +245,9 @@ public final class GoogleCalendarService: ObservableObject {
         case .classes:
             self.customOrderClasses = eventIds
             UserDefaults.standard.set(eventIds, forKey: "plantop_order_classes")
+        case .tasks:
+            self.customOrderTasks = eventIds
+            UserDefaults.standard.set(eventIds, forKey: "plantop_order_tasks")
         case .today:
             self.customOrderToday = eventIds
             UserDefaults.standard.set(eventIds, forKey: "plantop_order_today")
@@ -193,6 +261,7 @@ public final class GoogleCalendarService: ObservableObject {
         let order: [String]
         switch mode {
         case .classes: order = customOrderClasses
+        case .tasks: order = customOrderTasks
         case .today: order = customOrderToday
         case .tomorrow: order = customOrderTomorrow
         }
@@ -211,11 +280,13 @@ public final class GoogleCalendarService: ObservableObject {
         }
     }
     
-    public func setTestEvents(classes: [CalendarEvent], today: [CalendarEvent], tomorrow: [CalendarEvent]) {
+    public func setTestEvents(classes: [CalendarEvent], today: [CalendarEvent], tomorrow: [CalendarEvent], tasks: [CalendarEvent] = [], reports: [CalendarEvent] = []) {
+        let allTasks = tasks.isEmpty ? reports : tasks
         self.classesEvents = classes.filter { !dismissedEventIds.contains($0.id) }
+        self.tasksEvents = GoogleCalendarService.deduplicateRecurringEvents(allTasks.filter { !dismissedEventIds.contains($0.id) })
         self.todaysEvents = today.filter { !dismissedEventIds.contains($0.id) }
         self.tomorrowsEvents = tomorrow.filter { !dismissedEventIds.contains($0.id) }
-        self.syncStatus = .synced(Date(), todayCount: todaysEvents.count + classesEvents.count, tomorrowCount: tomorrowsEvents.count)
+        self.syncStatus = .synced(Date(), todayCount: todaysEvents.count + classesEvents.count + tasksEvents.count, tomorrowCount: tomorrowsEvents.count)
         NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
     }
     
@@ -350,27 +421,42 @@ public final class GoogleCalendarService: ObservableObject {
             let ekClasses = self.eventStore.events(matching: classesPred)
             let mappedClasses = self.mapEvents(ekClasses)
             
-            // Separate Classes & Alfatih events for today only (excluding dismissed events)
+            // 4. Query Tasks (Strictly limited to the current week: starting on Monday and ending on Sunday)
+            let (startOfWeek, endOfWeek) = GoogleCalendarService.currentWeekInterval(for: Date())
+            let tasksPred = self.eventStore.predicateForEvents(withStart: startOfWeek, end: endOfWeek, calendars: calendarsToQuery)
+            let ekTasks = self.eventStore.events(matching: tasksPred)
+            let mappedTasks = self.mapEvents(ekTasks)
+            
+            // Separate into dedicated category lists (excluding dismissed events, strictly within current week)
+            let rawTasks = mappedTasks.filter {
+                $0.isReportOrHomework &&
+                $0.startDate < endOfWeek && $0.endDate >= startOfWeek &&
+                !self.dismissedEventIds.contains($0.id)
+            }
+            let deduplicatedTasks = GoogleCalendarService.deduplicateRecurringEvents(rawTasks)
+            let tasksList = self.applyCustomOrder(deduplicatedTasks, forMode: .tasks)
+            
             let classesList = self.applyCustomOrder(
-                mappedClasses.filter { $0.isClassOrAlfatih && $0.startDate >= startOfToday && $0.startDate < startOfTomorrow && !self.dismissedEventIds.contains($0.id) },
+                mappedClasses.filter { $0.isClassOrAlfatih && !$0.isReportOrHomework && $0.startDate >= startOfToday && $0.startDate < startOfTomorrow && !self.dismissedEventIds.contains($0.id) },
                 forMode: .classes
             )
             let todayFiltered = self.applyCustomOrder(
-                mappedToday.filter { !$0.isClassOrAlfatih && !self.dismissedEventIds.contains($0.id) },
+                mappedToday.filter { !$0.isClassOrAlfatih && !$0.isReportOrHomework && !self.dismissedEventIds.contains($0.id) },
                 forMode: .today
             )
             let tomorrowFiltered = self.applyCustomOrder(
-                mappedTomorrow.filter { !$0.isClassOrAlfatih && !self.dismissedEventIds.contains($0.id) },
+                mappedTomorrow.filter { !$0.isClassOrAlfatih && !$0.isReportOrHomework && !self.dismissedEventIds.contains($0.id) },
                 forMode: .tomorrow
             )
             
             DispatchQueue.main.async {
-                NSLog("[PlanTop-Calendar] fetchEvents: %ld classes, %ld today, %ld tomorrow", classesList.count, todayFiltered.count, tomorrowFiltered.count)
+                NSLog("[PlanTop-Calendar] fetchEvents: %ld classes, %ld tasks, %ld today, %ld tomorrow", classesList.count, tasksList.count, todayFiltered.count, tomorrowFiltered.count)
                 self.classesEvents = classesList
+                self.tasksEvents = tasksList
                 self.todaysEvents = todayFiltered
                 self.tomorrowsEvents = tomorrowFiltered
                 self.lastSyncDate = Date()
-                self.syncStatus = .synced(Date(), todayCount: todayFiltered.count + classesList.count, tomorrowCount: tomorrowFiltered.count)
+                self.syncStatus = .synced(Date(), todayCount: todayFiltered.count + classesList.count + tasksList.count, tomorrowCount: tomorrowFiltered.count)
                 NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
             }
         }
@@ -379,6 +465,11 @@ public final class GoogleCalendarService: ObservableObject {
     private func mapEvents(_ ekEvents: [EKEvent]) -> [CalendarEvent] {
         return ekEvents.map { ev in
             let calColor = ev.calendar.color ?? NSColor(red: 0.26, green: 0.52, blue: 0.96, alpha: 1.0)
+            let hasRules = ev.hasRecurrenceRules || (ev.recurrenceRules != nil && !ev.recurrenceRules!.isEmpty) || ev.isDetached
+            let extId = ev.calendarItemExternalIdentifier
+            let isRecurring = hasRules || (extId != nil && !extId!.isEmpty)
+            let recurrenceKey = isRecurring ? (extId ?? "\(ev.calendar.calendarIdentifier)_\(ev.title ?? "")".lowercased()) : nil
+            
             return CalendarEvent(
                 id: ev.eventIdentifier ?? UUID().uuidString,
                 title: ev.title ?? "Untitled Event",
@@ -390,7 +481,10 @@ public final class GoogleCalendarService: ObservableObject {
                 url: ev.url,
                 calendarName: ev.calendar.title,
                 calendarColor: calColor,
-                sourceAccount: targetEmail
+                sourceAccount: targetEmail,
+                isRecurring: isRecurring,
+                recurrenceKey: recurrenceKey,
+                externalIdentifier: extId
             )
         }.sorted {
             if $0.isAllDay && !$1.isAllDay { return true }
@@ -432,28 +526,31 @@ public final class GoogleCalendarService: ObservableObject {
                 return
             }
             
-            let (todayFiltered, tomorrowFiltered, classesList) = self.parseICS(icsString)
+            let (todayFiltered, tomorrowFiltered, classesList, tasksList) = self.parseICS(icsString)
             
             DispatchQueue.main.async {
                 self.classesEvents = classesList
+                self.tasksEvents = tasksList
                 self.todaysEvents = todayFiltered
                 self.tomorrowsEvents = tomorrowFiltered
                 self.lastSyncDate = Date()
-                self.syncStatus = .synced(Date(), todayCount: todayFiltered.count + classesList.count, tomorrowCount: tomorrowFiltered.count)
+                self.syncStatus = .synced(Date(), todayCount: todayFiltered.count + classesList.count + tasksList.count, tomorrowCount: tomorrowFiltered.count)
                 NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
             }
         }
         task.resume()
     }
     
-    private func parseICS(_ ics: String) -> ([CalendarEvent], [CalendarEvent], [CalendarEvent]) {
+    private func parseICS(_ ics: String) -> ([CalendarEvent], [CalendarEvent], [CalendarEvent], [CalendarEvent]) {
         var today: [CalendarEvent] = []
         var tomorrow: [CalendarEvent] = []
         var classes: [CalendarEvent] = []
+        var tasks: [CalendarEvent] = []
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         guard let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday),
-              let endOfTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday) else { return ([], [], []) }
+              let endOfTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday) else { return ([], [], [], []) }
+        let (startOfWeek, endOfWeek) = GoogleCalendarService.currentWeekInterval(for: Date())
         
         let lines = ics.components(separatedBy: .newlines)
         var inEvent = false
@@ -464,6 +561,8 @@ public final class GoogleCalendarService: ObservableObject {
         var currentLocation = ""
         var currentURL: URL?
         var currentDescription = ""
+        var currentUID = ""
+        var isRecurring = false
         
         for rawLine in lines {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -476,6 +575,8 @@ public final class GoogleCalendarService: ObservableObject {
                 currentLocation = ""
                 currentURL = nil
                 currentDescription = ""
+                currentUID = ""
+                isRecurring = false
             } else if line == "END:VEVENT" {
                 inEvent = false
                 if let start = currentStart {
@@ -489,21 +590,20 @@ public final class GoogleCalendarService: ObservableObject {
                         notes: currentDescription.isEmpty ? nil : currentDescription,
                         url: currentURL,
                         calendarName: "Google Calendar",
-                        sourceAccount: targetEmail
+                        sourceAccount: targetEmail,
+                        isRecurring: isRecurring,
+                        recurrenceKey: currentUID.isEmpty ? nil : currentUID,
+                        externalIdentifier: currentUID.isEmpty ? nil : currentUID
                     )
                     
-                    if event.isClassOrAlfatih && (start >= startOfToday && start < startOfTomorrow) {
+                    if event.isReportOrHomework && (start < endOfWeek && end >= startOfWeek) {
+                        tasks.append(event)
+                    } else if event.isClassOrAlfatih && (start >= startOfToday && start < startOfTomorrow) {
                         classes.append(event)
-                    }
-                    
-                    if (start >= startOfToday && start < startOfTomorrow) || (end > startOfToday && end <= startOfTomorrow) {
-                        if !event.isClassOrAlfatih {
-                            today.append(event)
-                        }
+                    } else if (start >= startOfToday && start < startOfTomorrow) || (end > startOfToday && end <= startOfTomorrow) {
+                        today.append(event)
                     } else if (start >= startOfTomorrow && start < endOfTomorrow) || (end > startOfTomorrow && end <= endOfTomorrow) {
-                        if !event.isClassOrAlfatih {
-                            tomorrow.append(event)
-                        }
+                        tomorrow.append(event)
                     }
                 }
             } else if inEvent {
@@ -515,6 +615,10 @@ public final class GoogleCalendarService: ObservableObject {
                     currentDescription = String(line.dropFirst("DESCRIPTION:".count))
                 } else if line.hasPrefix("URL:") {
                     currentURL = URL(string: String(line.dropFirst("URL:".count)))
+                } else if line.hasPrefix("UID:") {
+                    currentUID = String(line.dropFirst("UID:".count))
+                } else if line.hasPrefix("RRULE:") || line.hasPrefix("RECURRENCE-ID") {
+                    isRecurring = true
                 } else if line.hasPrefix("DTSTART") {
                     let (date, allDay) = parseICSDate(line)
                     currentStart = date
@@ -526,10 +630,12 @@ public final class GoogleCalendarService: ObservableObject {
             }
         }
         
+        let deduplicatedTasks = GoogleCalendarService.deduplicateRecurringEvents(tasks.filter { !dismissedEventIds.contains($0.id) })
         return (
             applyCustomOrder(today.filter { !dismissedEventIds.contains($0.id) }, forMode: .today),
             applyCustomOrder(tomorrow.filter { !dismissedEventIds.contains($0.id) }, forMode: .tomorrow),
-            applyCustomOrder(classes.filter { !dismissedEventIds.contains($0.id) }, forMode: .classes)
+            applyCustomOrder(classes.filter { !dismissedEventIds.contains($0.id) }, forMode: .classes),
+            applyCustomOrder(deduplicatedTasks, forMode: .tasks)
         )
     }
     
@@ -554,7 +660,13 @@ public final class GoogleCalendarService: ObservableObject {
     }
     
     public func openCalendarApp() {
-        NSWorkspace.shared.open(URL(string: "ical://")!)
+        if let url = URL(string: "https://calendar.google.com/calendar/r") {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        if let url = URL(string: "https://calendar.google.com") {
+            NSWorkspace.shared.open(url)
+        }
     }
     
     public func openSystemSettingsAccounts() {

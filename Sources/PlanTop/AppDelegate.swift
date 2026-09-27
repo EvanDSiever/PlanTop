@@ -29,6 +29,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         GoogleCalendarService.shared.syncNow()
         print("PlanTop started successfully in background.")
         
+        // Ensure launch-at-login is enabled so PlanTop starts upon computer startup
+        let launchAtStartup = UserDefaults.standard.object(forKey: "plantop_launch_at_login") as? Bool ?? true
+        LaunchAtLoginHelper.setEnabled(launchAtStartup)
+        
         // Strictly maintain accessory mode so PlanTop NEVER appears in the macOS Dock
         NSApp.setActivationPolicy(.accessory)
         
@@ -63,11 +67,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openSettings()
         }
     }
-    
     public func applicationDidBecomeActive(_ notification: Notification) {
-        if !isLaunching && !(settingsController.window?.isVisible ?? false) {
-            openSettings()
-        }
+        // App became active (e.g. user hovered over panel to type, or clicked menu bar icon).
+        // Settings should only be displayed when explicitly opened by user request.
     }
     
     public func openSettings() {

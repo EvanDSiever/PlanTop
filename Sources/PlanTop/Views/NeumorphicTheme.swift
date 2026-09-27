@@ -1,51 +1,214 @@
 import AppKit
 
-public struct NeumorphicTheme {
-    // MARK: - Surface Plain Colors
-    /// Clean, neutral light master background (#F8FAFC)
-    public static let masterBackground = NSColor(red: 0.965, green: 0.973, blue: 0.985, alpha: 1.0)
-    public static let baseBackground = masterBackground
-    public static let panelBackground = masterBackground
+// MARK: - Apple (HIG-inspired) Design System
+/// Implements the Apple Human Interface Guidelines design system:
+/// - Semantic, adaptive system colors (systemBlue, label, secondaryLabel, systemBackground, etc.)
+/// - Single system family (SF Pro) with dynamic type scale and 17pt body legibility floor
+/// - 8pt grid layout convention with 44pt minimum tap targets
+/// - Translucent Liquid Glass materials that float above and defer to content
+public struct AppleTheme {
+    // MARK: - Colors (Adaptive Semantic Roles)
     
-    /// Plain flat card surface (#FFFFFF)
-    public static let cardElevated = NSColor.white
+    /// Default Apple Vibrant Electric Yellow (#FFD60A approximate)
+    public static let defaultYellow = NSColor(red: 1.0, green: 0.839, blue: 0.039, alpha: 1.0)
     
-    /// Subtle inset / secondary surface
-    public static let insetWell = NSColor(red: 0.945, green: 0.955, blue: 0.970, alpha: 1.0)
+    /// Default Apple systemBlue (#007AFF approximate)
+    public static let defaultBlue = NSColor.systemBlue
     
-    /// Subtle hairline border highlight
-    public static let specularHighlightBorder = NSColor(red: 0.88, green: 0.91, blue: 0.95, alpha: 0.85)
-    
-    /// Ambient panel border outline
-    public static let panelBorderOutline = NSColor(red: 0.86, green: 0.89, blue: 0.93, alpha: 0.90)
-    
-    // MARK: - Signature Accents (Vibrant Orange Default + User-Customizable)
-    /// Signature Vibrant Orange (#FF700D) default
-    public static let defaultOrange = NSColor(red: 1.0, green: 0.44, blue: 0.05, alpha: 1.0)
-    
-    /// Dynamic user-selected theme accent (Orange by default)
-    public static var accentColor: NSColor {
+    /// Primary Accent Color: defaultYellow by default, user-customizable
+    public static var primary: NSColor {
         if let hex = UserDefaults.standard.string(forKey: "plantop_accent_color_hex") ?? UserDefaults.standard.string(forKey: "songtop_accent_color_hex"),
            let color = colorFromHex(hex) {
             return color
         }
-        return defaultOrange
+        return defaultYellow
     }
     
-    public static var accentHairline: NSColor {
-        return accentColor.withAlphaComponent(0.85)
+    /// Text role: Pure bright white (#FFFFFF) for highest legibility on black islands
+    public static var label: NSColor {
+        return NSColor.white
     }
     
-    // Aliases for unified theme adoption
-    public static var coralAccent: NSColor {
-        return accentColor
+    /// Secondary label: Crisp silver (#B8B8B8)
+    public static var secondaryLabel: NSColor {
+        return NSColor(white: 0.72, alpha: 1.0)
     }
-    public static var coralHairline: NSColor {
-        return accentHairline
-    }
-    public static let coralGlow = NSColor(red: 1.0, green: 0.44, blue: 0.05, alpha: 0.20)
-    public static let coralPillText = NSColor.white
     
+    /// Tertiary label: Muted gray (#7A7A7A)
+    public static var tertiaryLabel: NSColor {
+        return NSColor(white: 0.48, alpha: 1.0)
+    }
+    
+    /// Quaternary label: Faint placeholder text
+    public static var quaternaryLabel: NSColor {
+        return NSColor(white: 0.28, alpha: 1.0)
+    }
+    
+    /// Main background role: True pitch black
+    public static var systemBackground: NSColor {
+        return NSColor.black
+    }
+    
+    /// Secondary container surface background
+    public static var secondarySystemBackground: NSColor {
+        return NSColor(white: 0.08, alpha: 1.0)
+    }
+    
+    /// Tertiary grouping background
+    public static var tertiarySystemBackground: NSColor {
+        return NSColor(white: 0.12, alpha: 1.0)
+    }
+    
+    /// Hairline separator role
+    public static var separator: NSColor {
+        return NSColor(white: 1.0, alpha: 0.14)
+    }
+    
+    /// Success semantic color (~#34C759 approximate)
+    public static var success: NSColor {
+        return NSColor.systemGreen
+    }
+    
+    /// Danger semantic color (~#FF3B30 approximate)
+    public static var danger: NSColor {
+        return NSColor.systemRed
+    }
+    
+    /// Pure pitch black card surface (#000000 true OLED)
+    public static var cardBackground: NSColor {
+        return NSColor.black
+    }
+    
+    /// Inset well surface inside black card
+    public static var insetWell: NSColor {
+        return NSColor(white: 0.06, alpha: 1.0)
+    }
+    
+    /// Crisp specular hairline rim for black islands (0.5pt white @ 16%)
+    public static var cardBorder: NSColor {
+        return NSColor(white: 1.0, alpha: 0.16)
+    }
+    
+    // MARK: - Typography (SF Pro & SF Mono)
+    // Scale: large_title: 34, title1: 28, title2: 22, title3: 20, headline: 17, body: 17, callout: 16, subhead: 15, footnote: 13, caption1: 12, caption2: 11
+    
+    public static func font(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "System"
+        switch family {
+        case "Rounded":
+            if let desc = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.rounded),
+               let font = NSFont(descriptor: desc, size: size) {
+                return font
+            }
+            return NSFont.systemFont(ofSize: size, weight: weight)
+        case "Monospaced", "Mono":
+            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        case "Avenir":
+            let avenirName: String
+            switch weight {
+            case .bold, .heavy, .black:
+                avenirName = "Avenir-Heavy"
+            case .medium, .semibold:
+                avenirName = "Avenir-Medium"
+            case .light, .ultraLight, .thin:
+                avenirName = "Avenir-Light"
+            default:
+                avenirName = "Avenir-Book"
+            }
+            return NSFont(name: avenirName, size: size) ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case "Serif":
+            if let desc = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.serif),
+               let font = NSFont(descriptor: desc, size: size) {
+                return font
+            }
+            return NSFont.systemFont(ofSize: size, weight: weight)
+        default:
+            return NSFont.systemFont(ofSize: size, weight: weight)
+        }
+    }
+    
+    public static func monospacedFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+    }
+    
+    public static func monospacedDigitFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+    }
+    
+    /// Dedicated dynamic font resolver for lockscreen and island clock
+    public static func timeFont(size: CGFloat, weight: NSFont.Weight = .bold) -> NSFont {
+        let chosen = UserDefaults.standard.string(forKey: "plantop_time_font_name") ??
+                     UserDefaults.standard.string(forKey: "songtop_time_font_name") ?? "SFPro"
+        switch chosen {
+        case "SFPro", "MonospacedDigit":
+            return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+        case "SFProRounded", "Rounded":
+            if let desc = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.rounded),
+               let f = NSFont(descriptor: desc, size: size) {
+                return f
+            }
+            return NSFont.systemFont(ofSize: size, weight: weight)
+        case "SFProRegular":
+            return NSFont.systemFont(ofSize: size, weight: .regular)
+        case "SFMono", "Mono", "Monospaced":
+            if let desc = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(.monospaced),
+               let f = NSFont(descriptor: desc, size: size) {
+                return f
+            }
+            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        case "Futura-CondensedLight", "Futura":
+            if let f = NSFont(name: "Futura-CondensedMedium", size: size) ??
+                       NSFont(name: "Futura-Medium", size: size) ??
+                       NSFont(name: "Futura-Bold", size: size) ??
+                       NSFont(name: "Futura", size: size) {
+                return f
+            }
+            return NSFont.systemFont(ofSize: size, weight: weight)
+        case "AlienLeagueCondensed", "Alien":
+            if let f = NSFont(name: "AlienLeagueCondensed", size: size) ??
+                       NSFont(name: "AlienLeague", size: size) {
+                return f
+            }
+            return NSFont.systemFont(ofSize: size, weight: weight)
+        default:
+            if let f = NSFont(name: chosen, size: size) {
+                return f
+            }
+            return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+        }
+    }
+    
+    // Apple Type Scale Accessors
+    public static var largeTitleFont: NSFont { font(size: 34, weight: .regular) }
+    public static var title1Font: NSFont     { font(size: 28, weight: .regular) }
+    public static var title2Font: NSFont     { font(size: 22, weight: .bold) }
+    public static var title3Font: NSFont     { font(size: 20, weight: .semibold) }
+    public static var headlineFont: NSFont   { font(size: 17, weight: .semibold) }
+    public static var bodyFont: NSFont       { font(size: 17, weight: .regular) } // 17pt legibility floor
+    public static var calloutFont: NSFont    { font(size: 16, weight: .regular) }
+    public static var subheadFont: NSFont    { font(size: 15, weight: .regular) }
+    public static var footnoteFont: NSFont   { font(size: 13, weight: .regular) }
+    public static var caption1Font: NSFont   { font(size: 12, weight: .regular) }
+    public static var caption2Font: NSFont   { font(size: 11, weight: .regular) }
+    
+    // MARK: - Layout & Spacing
+    /// 8pt grid convention with 4pt subdivisions
+    public static let spacingConvention: CGFloat = 8.0
+    public static let minTapTarget: CGFloat = 44.0
+    public static let cornerRadius: CGFloat = 14.0
+    public static let cornerRadiusLarge: CGFloat = 20.0
+    public static let cornerRadiusMedium: CGFloat = 10.0
+    public static let cornerRadiusSmall: CGFloat = 8.0
+    
+    public static let grid4: CGFloat = 4.0
+    public static let grid8: CGFloat = 8.0
+    public static let grid12: CGFloat = 12.0
+    public static let grid16: CGFloat = 16.0
+    public static let grid20: CGFloat = 20.0
+    public static let grid24: CGFloat = 24.0
+    public static let grid32: CGFloat = 32.0
+    
+    // MARK: - Utilities
     public static func colorFromHex(_ hex: String) -> NSColor? {
         var cleanHex = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if cleanHex.hasPrefix("#") { cleanHex.removeFirst() }
@@ -57,14 +220,70 @@ public struct NeumorphicTheme {
     }
     
     public static func hexString(from color: NSColor) -> String {
-        guard let rgb = color.usingColorSpace(.sRGB) else { return "#FF700D" }
-        let r = Int(round(rgb.redComponent * 255))
-        let g = Int(round(rgb.greenComponent * 255))
-        let b = Int(round(rgb.blueComponent * 255))
+        let rgbColor: NSColor
+        if let converted = color.usingColorSpace(.sRGB) {
+            rgbColor = converted
+        } else if let converted = color.usingColorSpace(.deviceRGB) {
+            rgbColor = converted
+        } else {
+            return "#007AFF"
+        }
+        let r = max(0, min(255, Int(round(rgbColor.redComponent * 255))))
+        let g = max(0, min(255, Int(round(rgbColor.greenComponent * 255))))
+        let b = max(0, min(255, Int(round(rgbColor.blueComponent * 255))))
         return String(format: "#%02X%02X%02X", r, g, b)
     }
+}
+
+// MARK: - NeumorphicTheme (Compatibility Adapter for Existing Callers & Unit Tests)
+public struct NeumorphicTheme {
+    // MARK: - Surface Plain Colors
+    public static var masterBackground: NSColor { return AppleTheme.systemBackground }
+    public static var baseBackground: NSColor { return AppleTheme.systemBackground }
+    public static var panelBackground: NSColor { return AppleTheme.systemBackground }
     
-    // MARK: - Typography (Avenir Brand Typography)
+    /// Flat card surface
+    public static var cardElevated: NSColor { return AppleTheme.cardBackground }
+    
+    /// Subtle inset / secondary surface
+    public static var insetWell: NSColor { return AppleTheme.insetWell }
+    
+    /// Hairline border highlight
+    public static var specularHighlightBorder: NSColor { return AppleTheme.cardBorder }
+    
+    /// Ambient panel border outline
+    public static var panelBorderOutline: NSColor { return AppleTheme.cardBorder }
+    
+    // MARK: - Primary Accent
+    public static var accentColor: NSColor {
+        return AppleTheme.primary
+    }
+    
+    public static var accentHairline: NSColor {
+        return accentColor.withAlphaComponent(0.85)
+    }
+    
+    public static var coralAccent: NSColor {
+        return accentColor
+    }
+    public static var coralHairline: NSColor {
+        return accentHairline
+    }
+    public static var coralGlow: NSColor {
+        return accentColor.withAlphaComponent(0.20)
+    }
+    public static let coralPillText = NSColor.white
+    
+    public static func colorFromHex(_ hex: String) -> NSColor? {
+        return AppleTheme.colorFromHex(hex)
+    }
+    
+    public static func hexString(from color: NSColor) -> String {
+        return AppleTheme.hexString(from: color)
+    }
+    
+    // MARK: - Typography
+    /// Backward-compatible Avenir resolver (retained for explicit test expectations)
     public static func avenirFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
         let fontName: String
         switch weight {
@@ -89,142 +308,96 @@ public struct NeumorphicTheme {
     }
     
     public static func roundedFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        return avenirFont(ofSize: size, weight: weight)
+        return AppleTheme.font(size: size, weight: weight)
     }
     
     public static func monospacedRoundedFont(ofSize size: CGFloat, weight: NSFont.Weight = .bold) -> NSFont {
-        return avenirFont(ofSize: size, weight: weight)
+        return AppleTheme.monospacedDigitFont(size: size, weight: weight)
     }
     
-    /// Dedicated futuristic font for live timers and clocks
+    /// Dedicated font for live timers and clocks
     public static func timerFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
         return futuristicTimeFont(ofSize: size)
     }
     
-    /// Primary text - Modern slate charcoal (#0F172A)
-    public static let textPrimary = NSColor(red: 0.09, green: 0.12, blue: 0.17, alpha: 1.0)
+    /// Semantic Primary text (adapts automatically in dark and light modes)
+    public static var textPrimary: NSColor { return AppleTheme.label }
     
-    /// Secondary text - Medium cool slate (#64748B)
-    public static let textSecondary = NSColor(red: 0.39, green: 0.45, blue: 0.55, alpha: 1.0)
+    /// Semantic Secondary text
+    public static var textSecondary: NSColor { return AppleTheme.secondaryLabel }
     
-    /// Tertiary text - Soft muted slate (#94A3B8)
-    public static let textTertiary = NSColor(red: 0.58, green: 0.64, blue: 0.72, alpha: 1.0)
-    
-    // MARK: - Shadow Tokens (Plain aesthetic: zero drop shadow artifacts)
-    public static let darkSlateShadow = NSColor.clear
-    public static let whiteHighlight = NSColor.clear
-    public static let slateShadowColor = darkSlateShadow
-    public static let whiteHighlightColor = whiteHighlight
+    /// Semantic Tertiary text
+    public static var textTertiary: NSColor { return AppleTheme.tertiaryLabel }
     
     // MARK: - Button Tokens
-    public static let buttonBackground = NSColor.white
-    public static let buttonIconTint = NSColor(red: 0.22, green: 0.28, blue: 0.38, alpha: 1.0)
+    public static var buttonBackground: NSColor { return AppleTheme.cardBackground }
+    public static var buttonIconTint: NSColor { return AppleTheme.secondaryLabel }
     public static var buttonActiveBackground: NSColor { return accentColor }
     public static let buttonActiveTint = NSColor.white
     
-    // MARK: - Urgency Color Tokens (Clean Plain Aesthetic)
-    public static let urgentFill = NSColor.white
+    // MARK: - Urgency Color Tokens
+    public static var urgentFill: NSColor { return AppleTheme.cardBackground }
     public static var urgentText: NSColor { return accentColor }
     public static var urgentPill: NSColor { return accentColor }
     public static var urgentHairline: NSColor { return accentHairline }
     
-    public static let almostUrgentFill = NSColor.white
-    public static let almostUrgentText = textPrimary
-    public static let almostUrgentPill = insetWell
-    public static let almostUrgentHairline = specularHighlightBorder
+    public static var almostUrgentFill: NSColor { return AppleTheme.cardBackground }
+    public static var almostUrgentText: NSColor { return textPrimary }
+    public static var almostUrgentPill: NSColor { return insetWell }
+    public static var almostUrgentHairline: NSColor { return specularHighlightBorder }
     
-    public static let notUrgentFill = NSColor.white
-    public static let notUrgentText = textPrimary
-    public static let notUrgentPill = insetWell
-    public static let notUrgentHairline = specularHighlightBorder
+    public static var notUrgentFill: NSColor { return AppleTheme.cardBackground }
+    public static var notUrgentText: NSColor { return textPrimary }
+    public static var notUrgentPill: NSColor { return insetWell }
+    public static var notUrgentHairline: NSColor { return specularHighlightBorder }
     
-    public static let classNeutralFill = NSColor.white
-    public static let classNeutralText = textPrimary
-    public static let classNeutralPill = insetWell
-    public static let classNeutralHairline = specularHighlightBorder
+    public static var classNeutralFill: NSColor { return AppleTheme.cardBackground }
+    public static var classNeutralText: NSColor { return textPrimary }
+    public static var classNeutralPill: NSColor { return insetWell }
+    public static var classNeutralHairline: NSColor { return specularHighlightBorder }
     
-    public static let activeFill = NSColor.white
+    public static var activeFill: NSColor { return AppleTheme.cardBackground }
     public static var activeText: NSColor { return accentColor }
     public static var activePill: NSColor { return accentColor }
     public static var activeHairline: NSColor { return accentHairline }
     
-    // MARK: - Futuristic Accents & Typography (User Customizable)
-    /// Dynamic vibrant orange / theme accent (#FF700D)
     public static var futuristicOrange: NSColor {
         return accentColor
     }
     
     public static func futuristicTimeFont(ofSize size: CGFloat) -> NSFont {
-        let chosenFont = UserDefaults.standard.string(forKey: "plantop_time_font_name") ?? UserDefaults.standard.string(forKey: "songtop_time_font_name") ?? "AlienLeagueCondensed"
-        if let font = NSFont(name: chosenFont, size: size) {
-            return font
-        }
-        if let font = NSFont(name: "AlienLeagueCondensed", size: size) {
-            return font
-        }
-        if let font = NSFont(name: "AlienLeague", size: size) {
-            return font
-        }
-        if let font = NSFont(name: "Futura-CondensedMedium", size: size) {
-            return font
-        }
-        if let font = NSFont(name: "Futura-Medium", size: size) {
-            return font
-        }
-        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
-    }
-    
-    // MARK: - Plain Text Shadows (Completely zeroed for razor-sharp typography)
-    public static var elevatedTextShadow: NSShadow {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.clear
-        shadow.shadowOffset = .zero
-        shadow.shadowBlurRadius = 0.0
-        return shadow
-    }
-    
-    public static var softTextShadow: NSShadow {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.clear
-        shadow.shadowOffset = .zero
-        shadow.shadowBlurRadius = 0.0
-        return shadow
-    }
-    
-    // MARK: - Plain Flat Button Styling
-    public static func applyButtonShadow(to layer: CALayer?, cornerRadius: CGFloat = 10, isActive: Bool = false) {
-        guard let layer = layer else { return }
-        layer.cornerRadius = cornerRadius
-        layer.backgroundColor = isActive ? buttonActiveBackground.cgColor : buttonBackground.cgColor
-        layer.shadowColor = NSColor.clear.cgColor
-        layer.shadowOpacity = 0.0
-        layer.shadowRadius = 0.0
-        layer.shadowOffset = .zero
-        layer.borderColor = isActive ? coralHairline.cgColor : specularHighlightBorder.cgColor
-        layer.borderWidth = 0.5
+        return AppleTheme.timeFont(size: size, weight: .bold)
     }
 }
 
-// MARK: - Plain Card View (Clean GPU Layer-Backed, Zero CPU Software Rasterization)
+// MARK: - Liquid Glass Translucent Card View (Floating Island)
 open class NeumorphicDepressedCardView: NSView {
     open override var isFlipped: Bool { return true }
     
-    public var cornerRadiusValue: CGFloat = 12 {
+    public let visualEffectView = NSVisualEffectView()
+    private var trackingArea: NSTrackingArea?
+    public var isMouseHovered: Bool = false
+    
+    public var cornerRadiusValue: CGFloat = 14 {
         didSet { updateAppearance() }
     }
     
-    public var surfaceColor: NSColor = NSColor.white {
+    public var surfaceColor: NSColor = AppleTheme.cardBackground {
         didSet { updateAppearance() }
     }
     
     public var innerDarkShadowColor: NSColor = .clear
     public var innerLightHighlightColor: NSColor = .clear
     
-    public var outlineColor: NSColor = NeumorphicTheme.specularHighlightBorder {
+    public var outlineColor: NSColor = AppleTheme.cardBorder {
         didSet { updateAppearance() }
     }
     
     public var outlineWidth: CGFloat = 0.5 {
+        didSet { updateAppearance() }
+    }
+    
+    public var showsAmbientShadow: Bool = true {
         didSet { updateAppearance() }
     }
     
@@ -240,40 +413,98 @@ open class NeumorphicDepressedCardView: NSView {
     
     private func commonInit() {
         wantsLayer = true
-        layer?.masksToBounds = true
+        layer?.masksToBounds = false
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        
+        visualEffectView.material = .hudWindow
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.state = .active
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.masksToBounds = true
+        addSubview(visualEffectView, positioned: .below, relativeTo: nil)
+        
+        updateAppearance()
+    }
+    
+    open override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let ta = trackingArea {
+            removeTrackingArea(ta)
+        }
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
+        let ta = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(ta)
+        self.trackingArea = ta
+    }
+    
+    open override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        isMouseHovered = true
+        updateAppearance()
+    }
+    
+    open override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        isMouseHovered = false
         updateAppearance()
     }
     
     open override func layout() {
         super.layout()
+        let b = bounds
+        guard b.width > 0 && b.height > 0 else { return }
+        visualEffectView.frame = b
         updateAppearance()
     }
     
     public func updateAppearance() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        
         layer?.cornerRadius = cornerRadiusValue
-        layer?.backgroundColor = surfaceColor.cgColor
-        layer?.borderColor = outlineColor.cgColor
-        layer?.borderWidth = outlineWidth
+        layer?.backgroundColor = NSColor.clear.cgColor
+        
+        // Delicate Apple Ambient Drop Shadow for Floating Island effect
+        if showsAmbientShadow {
+            layer?.shadowColor = NSColor.black.cgColor
+            layer?.shadowOpacity = isMouseHovered ? 0.35 : 0.22
+            layer?.shadowRadius = isMouseHovered ? 12.0 : 8.0
+            layer?.shadowOffset = CGSize(width: 0, height: isMouseHovered ? -4 : -2.5)
+        } else {
+            layer?.shadowOpacity = 0.0
+        }
+        
+        // Pure Pitch Black Island Surface & Specular Hairline
+        visualEffectView.state = surfaceColor.alphaComponent < 1.0 ? .active : .inactive
+        visualEffectView.layer?.cornerRadius = cornerRadiusValue
+        visualEffectView.layer?.borderColor = outlineColor.cgColor
+        visualEffectView.layer?.borderWidth = outlineWidth
+        
+        CATransaction.commit()
+    }
+    
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 }
 
-// MARK: - Plain Elevated Card View (Clean Flat Container)
+// MARK: - Plain Elevated Card View (Translucent Glass Container)
 open class NeumorphicElevatedCardView: NSView {
     open override var isFlipped: Bool { return true }
     public let darkShadowLayer = CALayer()
     public let lightShadowLayer = CALayer()
     public let bodySurfaceLayer = CALayer()
     
-    public var cornerRadiusValue: CGFloat = 10 {
+    public var cornerRadiusValue: CGFloat = 12 {
         didSet { updateAppearance() }
     }
     
-    public var surfaceColor: NSColor = NSColor(red: 0.97, green: 0.98, blue: 0.99, alpha: 1.0) {
+    public var surfaceColor: NSColor = AppleTheme.cardBackground {
         didSet { updateAppearance() }
     }
     
-    public var outlineColor: NSColor = NeumorphicTheme.specularHighlightBorder {
+    public var outlineColor: NSColor = AppleTheme.cardBorder {
         didSet { updateAppearance() }
     }
     
@@ -333,22 +564,34 @@ open class NeumorphicElevatedCardView: NSView {
         bodySurfaceLayer.borderColor = outlineColor.cgColor
         CATransaction.commit()
     }
+    
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
 }
 
 open class FlippedNeumorphicView: NSView {
     open override var isFlipped: Bool { return true }
 }
 
-// MARK: - Plain Panel Container View (Clean Solid Window Surface without Shadows)
+// MARK: - Transparent Panel Container View (Floating Islands Host)
+/// Transparent container coordinating the floating island constellation
 open class NeumorphicPanelContainerView: NSView {
     open override var isFlipped: Bool { return true }
+    
+    public let visualEffectView = NSVisualEffectView()
     public let contentView: NSView = FlippedNeumorphicView()
     
     public var cornerRadiusValue: CGFloat = 20 {
         didSet { updateAppearance() }
     }
     
-    public var panelBackgroundColor: NSColor = NeumorphicTheme.panelBackground {
+    public var isBackgroundVisible: Bool = false {
+        didSet { updateAppearance() }
+    }
+    
+    public var panelBackgroundColor: NSColor = .clear {
         didSet { updateAppearance() }
     }
     
@@ -364,14 +607,20 @@ open class NeumorphicPanelContainerView: NSView {
     
     private func setupViews() {
         wantsLayer = true
-        layer?.masksToBounds = true
-        layer?.shadowOpacity = 0.0
+        layer?.masksToBounds = false
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         
-        // Clipped Content Container with Solid Ceramic Background & Border
+        visualEffectView.material = .hudWindow
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.state = .active
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.masksToBounds = true
+        visualEffectView.isHidden = !isBackgroundVisible
+        addSubview(visualEffectView)
+        
+        // Flipped Content Host
         contentView.wantsLayer = true
-        contentView.layer?.masksToBounds = true
-        contentView.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        contentView.layer?.masksToBounds = false
         addSubview(contentView)
         
         updateAppearance()
@@ -381,6 +630,7 @@ open class NeumorphicPanelContainerView: NSView {
         super.layout()
         let b = bounds
         guard b.width > 0 && b.height > 0 else { return }
+        visualEffectView.frame = b
         contentView.frame = b
     }
     
@@ -389,18 +639,29 @@ open class NeumorphicPanelContainerView: NSView {
         CATransaction.setDisableActions(true)
         
         layer?.cornerRadius = cornerRadiusValue
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.borderWidth = 0
         layer?.shadowOpacity = 0.0
         
+        visualEffectView.isHidden = !isBackgroundVisible
+        visualEffectView.layer?.cornerRadius = cornerRadiusValue
+        visualEffectView.layer?.borderColor = isBackgroundVisible ? AppleTheme.cardBorder.cgColor : NSColor.clear.cgColor
+        visualEffectView.layer?.borderWidth = isBackgroundVisible ? 0.5 : 0.0
+        
         contentView.layer?.cornerRadius = cornerRadiusValue
-        contentView.layer?.backgroundColor = panelBackgroundColor.cgColor
-        contentView.layer?.borderColor = NeumorphicTheme.panelBorderOutline.cgColor
-        contentView.layer?.borderWidth = 0.75
+        contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        contentView.layer?.borderWidth = 0
         
         CATransaction.commit()
     }
+    
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
 }
 
-// MARK: - Plain Sunken Well View (Flat Inset Container)
+// MARK: - Sunken Well View (Flat Inset Container)
 open class NeumorphicSunkenWellView: NSView {
     open override var isFlipped: Bool { return true }
     
@@ -408,13 +669,11 @@ open class NeumorphicSunkenWellView: NSView {
         didSet { updateAppearance() }
     }
     
-    public var wellColor: NSColor = NeumorphicTheme.insetWell {
+    public var wellColor: NSColor = AppleTheme.insetWell {
         didSet { updateAppearance() }
     }
     
-    public var innerDarkShadowColor: NSColor = .clear
-    public var innerLightHighlightColor: NSColor = .clear
-    public var innerRimColor: NSColor = NeumorphicTheme.specularHighlightBorder
+    public var innerRimColor: NSColor = AppleTheme.cardBorder
     
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -444,9 +703,14 @@ open class NeumorphicSunkenWellView: NSView {
         layer?.borderColor = innerRimColor.cgColor
         layer?.borderWidth = 0.5
     }
+    
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
 }
 
-// MARK: - Plain Dynamic Interactive Button (Instant GPU Color Feedback, No Software Shadows)
+// MARK: - Dynamic Interactive Button (Apple HIG Tap Target & Feedback)
 open class NeumorphicDynamicButton: NSButton {
     open override var isFlipped: Bool { return true }
     
@@ -461,11 +725,11 @@ open class NeumorphicDynamicButton: NSButton {
         didSet { updateAppearance() }
     }
     
-    public var unpressedBackgroundColor: NSColor = NSColor.white {
+    public var unpressedBackgroundColor: NSColor = AppleTheme.cardBackground {
         didSet { updateAppearance() }
     }
     
-    public var pressedBackgroundColor: NSColor = NeumorphicTheme.baseBackground {
+    public var pressedBackgroundColor: NSColor = AppleTheme.primary {
         didSet { updateAppearance() }
     }
     
@@ -473,8 +737,13 @@ open class NeumorphicDynamicButton: NSButton {
         didSet { updateAppearance() }
     }
     
-    public var innerDarkShadowColor: NSColor = .clear
-    public var innerLightHighlightColor: NSColor = .clear
+    public var unpressedBorderColor: NSColor = AppleTheme.cardBorder {
+        didSet { updateAppearance() }
+    }
+    
+    public var unpressedBorderWidth: CGFloat = 0.5 {
+        didSet { updateAppearance() }
+    }
     
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -516,9 +785,14 @@ open class NeumorphicDynamicButton: NSButton {
             l.borderColor = NSColor.clear.cgColor
         } else {
             l.backgroundColor = unpressedBackgroundColor.cgColor
-            l.borderWidth = 0.5
-            l.borderColor = NeumorphicTheme.specularHighlightBorder.cgColor
+            l.borderWidth = unpressedBorderWidth
+            l.borderColor = unpressedBorderColor.cgColor
         }
+    }
+    
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
     
     open override func resetCursorRects() {

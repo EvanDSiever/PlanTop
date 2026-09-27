@@ -10,6 +10,16 @@ private final class PlanTopPanel: NSPanel {
     override var canBecomeKey: Bool {
         return true
     }
+    override var canBecomeMain: Bool {
+        return true
+    }
+    
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let responder = firstResponder, responder.performKeyEquivalent(with: event) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 public final class FloatingPillWindowController: NSObject {
@@ -425,15 +435,15 @@ public final class FloatingPillWindowController: NSObject {
             
             let bgView = NSView(frame: NSRect(origin: .zero, size: triggerZone.size))
             bgView.wantsLayer = true
-            bgView.layer?.backgroundColor = NeumorphicTheme.accentColor.withAlphaComponent(0.18).cgColor
-            bgView.layer?.borderColor = NeumorphicTheme.accentColor.withAlphaComponent(0.65).cgColor
+            bgView.layer?.backgroundColor = AppleTheme.primary.withAlphaComponent(0.18).cgColor
+            bgView.layer?.borderColor = AppleTheme.primary.withAlphaComponent(0.65).cgColor
             bgView.layer?.borderWidth = 1.5
             bgView.layer?.cornerRadius = 12
             
             let label = NSTextField(labelWithString: "Hover Zone")
             label.alignment = .center
-            label.font = NeumorphicTheme.roundedFont(ofSize: 11, weight: .bold)
-            label.textColor = NeumorphicTheme.accentColor
+            label.font = AppleTheme.font(size: 11, weight: .semibold)
+            label.textColor = AppleTheme.primary
             label.frame = NSRect(x: 0, y: (triggerZone.height - 20) / 2, width: triggerZone.width, height: 20)
             label.autoresizingMask = [.width, .minYMargin, .maxYMargin]
             bgView.addSubview(label)
@@ -506,12 +516,13 @@ public final class FloatingPillWindowController: NSObject {
         let screen = NSScreen.main
         let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let visibleFrame = screen?.visibleFrame ?? screenFrame
-        let initialH: CGFloat = 400
-        let initialY = visibleFrame.midY - (initialH / 2) + 20
+        let currentTop = min(visibleFrame.maxY - 16, visibleFrame.midY + 250)
+        let targetY = screenFrame.minY
+        let initialH = max(260, currentTop - targetY)
         let initialX = screenFrame.maxX - customPanelWidth - 16
         
         let panel = PlanTopPanel(
-            contentRect: NSRect(x: initialX, y: initialY, width: customPanelWidth, height: initialH),
+            contentRect: NSRect(x: initialX, y: targetY, width: customPanelWidth, height: initialH),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -523,7 +534,7 @@ public final class FloatingPillWindowController: NSObject {
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         
-        let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: customPanelWidth, height: 400))
+        let pv = FloatingPillView(frame: NSRect(x: 0, y: 0, width: customPanelWidth, height: initialH))
         pv.preferredPanelWidth = customPanelWidth
         pv.isPinned = isPinned
         
@@ -609,11 +620,19 @@ public final class FloatingPillWindowController: NSObject {
         let visibleFrame = screen.visibleFrame
         let rightMargin: CGFloat = 16
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
-        let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
-        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
+        
+        let currentTop: CGFloat
+        if isDroppedDown && panel.isVisible && panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY + 200 {
+            currentTop = panel.frame.maxY
+        } else {
+            currentTop = min(visibleFrame.maxY - 16, visibleFrame.midY + 250)
+        }
+        let targetY = screenFrame.minY
+        let panelHeight = max(260, currentTop - targetY)
+        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: panelHeight)
         
         panel.setFrame(targetFrame, display: true)
-        pv.frame = NSRect(origin: .zero, size: fittingSize)
+        pv.frame = NSRect(origin: .zero, size: targetFrame.size)
         cachedPillRect = targetFrame
         
         pv.reloadCalendar()
@@ -671,18 +690,21 @@ public final class FloatingPillWindowController: NSObject {
         let rightMargin: CGFloat = 16
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
         
-        var targetY: CGFloat
+        var currentTop: CGFloat
         if panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY + 200 {
-            targetY = panel.frame.maxY - fittingSize.height
+            currentTop = panel.frame.maxY
         } else {
-            targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
+            currentTop = min(visibleFrame.maxY - 16, visibleFrame.midY + 250)
         }
-        if targetY < visibleFrame.minY + 16 { targetY = visibleFrame.minY + 16 }
-        if targetY + fittingSize.height > visibleFrame.maxY - 16 { targetY = visibleFrame.maxY - 16 - fittingSize.height }
+        if currentTop > visibleFrame.maxY - 16 { currentTop = visibleFrame.maxY - 16 }
         
-        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
-        panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
-        pv.frame = NSRect(origin: .zero, size: fittingSize)
+        let targetY = screenFrame.minY
+        let height = max(260, currentTop - targetY)
+        let newFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: height)
+        
+        cachedPillRect = newFrame
+        panel.setFrame(newFrame, display: true)
+        pv.frame = NSRect(origin: .zero, size: newFrame.size)
     }
     
     public func handleResizeCompleted() {
@@ -708,7 +730,7 @@ public final class FloatingPillWindowController: NSObject {
         if isDroppedDown && panel.isVisible && panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY + 200 {
             currentTop = panel.frame.maxY
         } else {
-            currentTop = visibleFrame.midY + (fittingSize.height / 2) + 20
+            currentTop = min(visibleFrame.maxY - 16, visibleFrame.midY + 250)
         }
         
         // Ensure top is within visible screen bounds
@@ -716,18 +738,15 @@ public final class FloatingPillWindowController: NSObject {
             currentTop = visibleFrame.maxY - 16
         }
         
-        // Constrain height downwards so the panel never exceeds screen bottom (avoiding top jump)
-        let maxDownHeight = max(260, currentTop - (visibleFrame.minY + 16))
-        let finalHeight = min(fittingSize.height, maxDownHeight)
-        let targetY = currentTop - finalHeight
-        
+        let targetY = screenFrame.minY
+        let finalHeight = max(260, currentTop - targetY)
         let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: finalHeight)
         
         cachedPillRect = panel.frame.union(targetFrame)
         
         if !isDroppedDown || !panel.isVisible {
             panel.setFrame(targetFrame, display: false)
-            pv.frame = NSRect(origin: .zero, size: fittingSize)
+            pv.frame = NSRect(origin: .zero, size: targetFrame.size)
             return
         }
         
@@ -749,9 +768,12 @@ public final class FloatingPillWindowController: NSObject {
         let visibleFrame = screen.visibleFrame
         let rightMargin: CGFloat = 16
         let targetX = screenFrame.maxX - fittingSize.width - rightMargin
-        let targetY = visibleFrame.midY - (fittingSize.height / 2) + 20
-        cachedPillRect = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height)
-        panel.setFrame(NSRect(x: targetX, y: targetY, width: fittingSize.width, height: fittingSize.height), display: true)
-        pv.frame = NSRect(origin: .zero, size: fittingSize)
+        let currentTop = (isDroppedDown && panel.isVisible && panel.frame.height > 10 && panel.frame.maxY > visibleFrame.minY + 200) ? panel.frame.maxY : min(visibleFrame.maxY - 16, visibleFrame.midY + 250)
+        let targetY = screenFrame.minY
+        let height = max(260, currentTop - targetY)
+        let targetFrame = NSRect(x: targetX, y: targetY, width: fittingSize.width, height: height)
+        cachedPillRect = targetFrame
+        panel.setFrame(targetFrame, display: true)
+        pv.frame = NSRect(origin: .zero, size: targetFrame.size)
     }
 }

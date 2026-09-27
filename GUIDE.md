@@ -42,9 +42,10 @@ Move your mouse cursor towards the right edge of your screen:
 
 ## 4. Google Calendar & Custom Class Detectors
 
-PlanTop organizes your events into three focused views:
+PlanTop organizes your events into four focused views:
 - **Classes**: Dedicated tab for lectures, discussions, labs, and academic sessions.
-- **Today**: All schedule items for today with active status badges (`[NOW]`, `In 15m`).
+- **Tasks**: Dedicated tab for assignments, reports, and homework starting with `REPORT` or `HOMEWORK` prefixes, strictly focused on the current week (Monday 00:00:00 through Sunday 23:59:59). For tasks happening or due on the current day, live second-by-second countdown timers (`Starts in ...`, `Ends in ...`, `Ended`) are displayed. For tasks scheduled later in the week, the date of occurrence (e.g. `Friday, Sep 25`, `Saturday, Sep 26`) is displayed directly underneath the title without timer clutter. Recurring and repeated tasks across weeks (such as weekly laboratory reports) are strictly deduplicated so only the current week's upcoming instance is shown.
+- **Today**: All general schedule items for today with active status badges (`[NOW]`, `In 15m`).
 - **Tomorrow**: Preview of tomorrow's schedule.
 
 ### Setting Up Class Detectors:
@@ -66,18 +67,35 @@ PlanTop organizes your events into three focused views:
 
 ---
 
-## 5. Customizing Themes, Colors & Futuristic Fonts
+## 5. Instant Quick Notes with Rich Formatting & Markdown Lists
 
+Directly below the large clock and calendar panel is the **Instant Quick Notes** surface:
+- **Instant Writing**: The header bar and title have been eliminated so clicking anywhere immediately focuses the text editor with zero friction.
+- **Larger 14.5pt Typography**: Clear, highly legible Avenir text sizing with comfortable line spacing.
+- **Smart Bullet & Numbered Lists**:
+  - Type `- `, `* `, or `• ` to start a bullet list. Pressing `Return` automatically continues the list. Pressing `Return` on an empty bullet line cleanly exits the list.
+  - Type `1. ` to start a numbered list. Pressing `Return` automatically increments numbers (`2. `, `3. `). Pressing `Return` on an empty numbered line exits the list.
+  - Or click the **`•` (Bullet)** and **`1.` (Numbered)** buttons in the bottom toolbar to toggle lists on your current selection.
+- **Bold & Italic Formatting**:
+  - Wrap words in `**bold**` or `*italic*` syntax.
+  - Use keyboard shortcuts `Cmd + B` for bold and `Cmd + I` for italic, or click the **B** and **I** toolbar buttons.
+  - Enjoy live visual syntax styling right inside the note editor.
+- **Persistent Storage**: Notes are preserved automatically in `UserDefaults` across app launches. Click the subtle trash icon in the toolbar when you want to clear your notes.
+
+---
+
+## 6. Customizing Themes, Colors & Apple Typography
+ 
 1. Open **PlanTop Settings & Preferences**.
 2. In the **Appearance, Color Scheme & Typography** card:
-   - **Accent Colors**: Select between **Orange**, **Coral**, **Blue**, **Green**, or **Purple**, or use the color picker for any custom hex color.
-   - **Time Font**: Choose between `Alien League Condensed`, `Alien League Regular`, `Futura Condensed Light`, `SF Pro Rounded Light`, or `Monospaced Digit`.
-   - **App Font**: Choose between `SF Pro Rounded (Default)`, `System Default`, `Monospaced`, or `Serif`.
+   - **Accent Colors**: Select between Apple system colors (**Blue**, **Purple**, **Green**, **Orange**, **Red**), or use the native color picker for custom tones.
+   - **Time Font**: Choose between `SF Pro Monospaced Digits (Default)`, `SF Pro Rounded`, `SF Mono`, `Futura Condensed Light`, or `Alien League`.
+   - **App Font**: Choose between `SF Pro (System Default)`, `SF Pro Rounded`, `SF Mono`, `Avenir`, or `System Serif`.
 - All theme updates reflect instantly across the side panel and menu bar.
 
 ---
 
-## 6. Starting Automatically at Login
+## 7. Starting Automatically at Login
 
 To have PlanTop ready on your desktop whenever you start your Mac:
 1. Open **PlanTop Settings & Preferences**.

@@ -114,8 +114,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         headerItem.attributedTitle = NSAttributedString(
             string: "PlanTop • \(df.string(from: now))",
             attributes: [
-                .font: NeumorphicTheme.avenirFont(ofSize: 13, weight: .bold),
-                .foregroundColor: NSColor.labelColor
+                .font: AppleTheme.font(size: 13, weight: .semibold),
+                .foregroundColor: AppleTheme.label
             ]
         )
         menu.addItem(headerItem)
@@ -167,7 +167,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         
         // Quick Actions
-        let openCalItem = NSMenuItem(title: "Open Calendar App", action: #selector(openCalendarAppClicked), keyEquivalent: "c")
+        let openCalItem = NSMenuItem(title: "Open Google Calendar", action: #selector(openCalendarAppClicked), keyEquivalent: "c")
         openCalItem.target = self
         openCalItem.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)
         menu.addItem(openCalItem)

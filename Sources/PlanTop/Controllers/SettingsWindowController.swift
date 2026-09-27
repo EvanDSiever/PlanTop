@@ -13,12 +13,17 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private let modeSegmentedControl = NSSegmentedControl(labels: ["Right Hover Slide", "Always Visible Panel", "Menu Bar Only"], trackingMode: .selectOne, target: nil, action: nil)
     
     // Appearance & Color Scheme Controls
-    private let colorPresetOrange = NSButton(title: "Orange", target: nil, action: nil)
-    private let colorPresetCoral = NSButton(title: "Coral", target: nil, action: nil)
     private let colorPresetBlue = NSButton(title: "Blue", target: nil, action: nil)
-    private let colorPresetGreen = NSButton(title: "Green", target: nil, action: nil)
     private let colorPresetPurple = NSButton(title: "Purple", target: nil, action: nil)
+    private let colorPresetGreen = NSButton(title: "Green", target: nil, action: nil)
+    private let colorPresetOrange = NSButton(title: "Orange", target: nil, action: nil)
+    private let colorPresetRed = NSButton(title: "Red", target: nil, action: nil)
     private let customColorWell = NSColorWell()
+    private var isInternalColorChange = false
+    private var calTitleLabel: NSTextField?
+    private var panelTitleLabel: NSTextField?
+    private var appearanceTitleLabel: NSTextField?
+    private var sysTitleLabel: NSTextField?
     
     // Typography & Font Selectors
     private let timeFontPopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -57,7 +62,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     // Cards collection for responsive centering & borderless layout
     private var sectionCards: [NSView] = []
-    private var headerIconView: NSView?
+    private var headerIconView: NSImageView?
     private var headerTitleLabel: NSView?
     private var headerSubtitleLabel: NSView?
     private var settingsContainer: FlippedSettingsContainer?
@@ -75,8 +80,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             defer: false
         )
         window.title = "PlanTop Settings & Preferences"
-        window.appearance = NSAppearance(named: .aqua)
-        window.backgroundColor = NSColor(red: 0.965, green: 0.973, blue: 0.985, alpha: 1.0)
+        window.backgroundColor = .windowBackgroundColor
         window.minSize = NSSize(width: 520, height: 480)
         window.collectionBehavior = [.fullScreenPrimary]
         window.center()
@@ -111,13 +115,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
     
     @objc private func onSettingsChanged() {
+        guard !isInternalColorChange else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.loadInitialValues()
+            guard let self = self, !self.isInternalColorChange else { return }
+            self.loadInitialValues()
         }
     }
     
     public func show() {
-        window?.appearance = NSAppearance(named: .aqua)
         loadInitialValues()
         updateCalendarStatusUI()
         window?.makeKeyAndOrderFront(nil)
@@ -163,30 +168,30 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         let container = FlippedSettingsContainer(frame: NSRect(x: 0, y: 0, width: 540, height: 980))
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(red: 0.965, green: 0.973, blue: 0.985, alpha: 1.0).cgColor
+        container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         self.settingsContainer = container
         
         var currentY: CGFloat = 24
         
         // 1. Header Banner
-        let iconView = NSImageView(frame: NSRect(x: 20, y: currentY, width: 46, height: 46))
-        let config = NSImage.SymbolConfiguration(pointSize: 28, weight: .bold)
+        let iconView = NSImageView(frame: NSRect(x: 20, y: currentY, width: 44, height: 44))
+        let config = NSImage.SymbolConfiguration(pointSize: 26, weight: .semibold)
         iconView.image = NSImage(systemSymbolName: "calendar.badge.clock", accessibilityDescription: "PlanTop")?.withSymbolConfiguration(config)
-        iconView.contentTintColor = NeumorphicTheme.accentColor
+        iconView.contentTintColor = AppleTheme.primary
         container.addSubview(iconView)
         self.headerIconView = iconView
         
         let appTitle = NSTextField(labelWithString: "PlanTop Daily Planner")
-        appTitle.font = NeumorphicTheme.avenirFont(ofSize: 19, weight: .bold)
-        appTitle.textColor = .labelColor
-        appTitle.frame = NSRect(x: 78, y: currentY + 2, width: 380, height: 24)
+        appTitle.font = AppleTheme.title2Font
+        appTitle.textColor = AppleTheme.label
+        appTitle.frame = NSRect(x: 74, y: currentY + 2, width: 380, height: 26)
         container.addSubview(appTitle)
         self.headerTitleLabel = appTitle
         
         let appSubtitle = NSTextField(labelWithString: "Stealth macOS Side-Panel Companion & Calendar Activity Hub")
-        appSubtitle.font = NeumorphicTheme.avenirFont(ofSize: 11.5, weight: .regular)
-        appSubtitle.textColor = .secondaryLabelColor
-        appSubtitle.frame = NSRect(x: 78, y: currentY + 26, width: 420, height: 16)
+        appSubtitle.font = AppleTheme.footnoteFont
+        appSubtitle.textColor = AppleTheme.secondaryLabel
+        appSubtitle.frame = NSRect(x: 74, y: currentY + 28, width: 420, height: 16)
         container.addSubview(appSubtitle)
         self.headerSubtitleLabel = appSubtitle
         
@@ -199,10 +204,11 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sectionCards.append(calCard)
         
         let calTitle = NSTextField(labelWithString: "Daily Planner & Google Calendar Integration")
-        calTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
-        calTitle.textColor = NeumorphicTheme.accentColor
+        calTitle.font = AppleTheme.font(size: 13, weight: .semibold)
+        calTitle.textColor = AppleTheme.primary
         calTitle.frame = NSRect(x: 14, y: calCardH - 30, width: 400, height: 16)
         calCard.addSubview(calTitle)
+        self.calTitleLabel = calTitle
         
         calendarEnabledCheckbox.frame = NSRect(x: 14, y: calCardH - 58, width: 400, height: 18)
         calendarEnabledCheckbox.target = self
@@ -211,8 +217,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // Class Detectors
         let classLabel = NSTextField(labelWithString: "Class Detectors (Keywords separated by commas):")
-        classLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        classLabel.textColor = NeumorphicTheme.textPrimary
+        classLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        classLabel.textColor = AppleTheme.label
         classLabel.frame = NSRect(x: 14, y: calCardH - 90, width: 420, height: 16)
         calCard.addSubview(classLabel)
         
@@ -224,8 +230,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // iCal subscription URL
         let iCalLabel = NSTextField(labelWithString: "Custom Google Calendar iCal URL (Secret Address in iCal format):")
-        iCalLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        iCalLabel.textColor = NeumorphicTheme.textPrimary
+        iCalLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        iCalLabel.textColor = AppleTheme.label
         iCalLabel.frame = NSRect(x: 14, y: calCardH - 148, width: 450, height: 16)
         calCard.addSubview(iCalLabel)
         
@@ -236,8 +242,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         calCard.addSubview(calendarICalField)
         
         // Sync status and actions
-        calendarStatusLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .regular)
-        calendarStatusLabel.textColor = .secondaryLabelColor
+        calendarStatusLabel.font = AppleTheme.footnoteFont
+        calendarStatusLabel.textColor = AppleTheme.secondaryLabel
         calendarStatusLabel.frame = NSRect(x: 14, y: 18, width: 230, height: 26)
         calCard.addSubview(calendarStatusLabel)
         
@@ -256,26 +262,27 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         currentY += calCardH + 14
         
         // CARD 2: Right-Edge Slide Panel & Display Mode
-        let panelCardH: CGFloat = 260
+        let panelCardH: CGFloat = 370
         let panelCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: panelCardH))
         container.addSubview(panelCard)
         sectionCards.append(panelCard)
         
         let panelTitle = NSTextField(labelWithString: "Right-Edge Slide Panel & Display Mode")
-        panelTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
-        panelTitle.textColor = NeumorphicTheme.accentColor
+        panelTitle.font = AppleTheme.font(size: 13, weight: .semibold)
+        panelTitle.textColor = AppleTheme.primary
         panelTitle.frame = NSRect(x: 14, y: panelCardH - 30, width: 400, height: 16)
         panelCard.addSubview(panelTitle)
+        self.panelTitleLabel = panelTitle
         
         modeSegmentedControl.frame = NSRect(x: 14, y: panelCardH - 62, width: 450, height: 24)
         modeSegmentedControl.target = self
         modeSegmentedControl.action = #selector(modeSegmentChanged(_:))
         panelCard.addSubview(modeSegmentedControl)
         
-        // Reach slider
+        // 1. Hover Scan Reach slider
         let reachLabel = NSTextField(labelWithString: "Hover Scan Reach (px from right bezel):")
-        reachLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        reachLabel.textColor = NeumorphicTheme.textPrimary
+        reachLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        reachLabel.textColor = AppleTheme.label
         reachLabel.frame = NSRect(x: 14, y: panelCardH - 96, width: 280, height: 16)
         panelCard.addSubview(reachLabel)
         
@@ -284,26 +291,64 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         widthSlider.action = #selector(widthSliderChanged(_:))
         panelCard.addSubview(widthSlider)
         
-        widthValueLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .bold)
+        widthValueLabel.font = AppleTheme.font(size: 12, weight: .semibold)
+        widthValueLabel.textColor = AppleTheme.secondaryLabel
         widthValueLabel.alignment = .right
         widthValueLabel.frame = NSRect(x: 400, y: panelCardH - 120, width: 64, height: 20)
         panelCard.addSubview(widthValueLabel)
         
-        // Panel Width slider
+        // 2. Hover Trigger Height slider
+        let heightLabel = NSTextField(labelWithString: "Hover Trigger Zone Height (200px - 1100px):")
+        heightLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        heightLabel.textColor = AppleTheme.label
+        heightLabel.frame = NSRect(x: 14, y: panelCardH - 150, width: 320, height: 16)
+        panelCard.addSubview(heightLabel)
+        
+        heightSlider.frame = NSRect(x: 14, y: panelCardH - 174, width: 380, height: 20)
+        heightSlider.target = self
+        heightSlider.action = #selector(heightSliderChanged(_:))
+        panelCard.addSubview(heightSlider)
+        
+        heightValueLabel.font = AppleTheme.font(size: 12, weight: .semibold)
+        heightValueLabel.textColor = AppleTheme.secondaryLabel
+        heightValueLabel.alignment = .right
+        heightValueLabel.frame = NSRect(x: 400, y: panelCardH - 174, width: 64, height: 20)
+        panelCard.addSubview(heightValueLabel)
+        
+        // 3. Hover Sensitivity / Delay slider
+        let sensitivityLabel = NSTextField(labelWithString: "Hover Activation Delay (Sensitivity):")
+        sensitivityLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        sensitivityLabel.textColor = AppleTheme.label
+        sensitivityLabel.frame = NSRect(x: 14, y: panelCardH - 204, width: 320, height: 16)
+        panelCard.addSubview(sensitivityLabel)
+        
+        sensitivitySlider.frame = NSRect(x: 14, y: panelCardH - 228, width: 380, height: 20)
+        sensitivitySlider.target = self
+        sensitivitySlider.action = #selector(sensitivitySliderChanged(_:))
+        panelCard.addSubview(sensitivitySlider)
+        
+        sensitivityValueLabel.font = AppleTheme.font(size: 12, weight: .semibold)
+        sensitivityValueLabel.textColor = AppleTheme.secondaryLabel
+        sensitivityValueLabel.alignment = .right
+        sensitivityValueLabel.frame = NSRect(x: 400, y: panelCardH - 228, width: 64, height: 20)
+        panelCard.addSubview(sensitivityValueLabel)
+        
+        // 4. Panel Width slider
         let pWidthLabel = NSTextField(labelWithString: "Slide Panel Width (260px - 650px):")
-        pWidthLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        pWidthLabel.textColor = NeumorphicTheme.textPrimary
-        pWidthLabel.frame = NSRect(x: 14, y: panelCardH - 150, width: 280, height: 16)
+        pWidthLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        pWidthLabel.textColor = AppleTheme.label
+        pWidthLabel.frame = NSRect(x: 14, y: panelCardH - 258, width: 280, height: 16)
         panelCard.addSubview(pWidthLabel)
         
-        panelWidthSlider.frame = NSRect(x: 14, y: panelCardH - 174, width: 380, height: 20)
+        panelWidthSlider.frame = NSRect(x: 14, y: panelCardH - 282, width: 380, height: 20)
         panelWidthSlider.target = self
         panelWidthSlider.action = #selector(panelWidthSliderChanged(_:))
         panelCard.addSubview(panelWidthSlider)
         
-        panelWidthValueLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .bold)
+        panelWidthValueLabel.font = AppleTheme.font(size: 12, weight: .semibold)
+        panelWidthValueLabel.textColor = AppleTheme.secondaryLabel
         panelWidthValueLabel.alignment = .right
-        panelWidthValueLabel.frame = NSRect(x: 400, y: panelCardH - 174, width: 64, height: 20)
+        panelWidthValueLabel.frame = NSRect(x: 400, y: panelCardH - 282, width: 64, height: 20)
         panelCard.addSubview(panelWidthValueLabel)
         
         // Pin & Test Guide buttons
@@ -327,31 +372,32 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         sectionCards.append(appearanceCard)
         
         let appearanceTitle = NSTextField(labelWithString: "Appearance, Color Scheme & Typography")
-        appearanceTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
-        appearanceTitle.textColor = NeumorphicTheme.accentColor
+        appearanceTitle.font = AppleTheme.font(size: 13, weight: .semibold)
+        appearanceTitle.textColor = AppleTheme.primary
         appearanceTitle.frame = NSRect(x: 14, y: appCardH - 30, width: 350, height: 16)
         appearanceCard.addSubview(appearanceTitle)
+        self.appearanceTitleLabel = appearanceTitle
         
         // Color row
         let colorLabel = NSTextField(labelWithString: "Accent Color:")
-        colorLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        colorLabel.textColor = NeumorphicTheme.textPrimary
+        colorLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        colorLabel.textColor = AppleTheme.label
         colorLabel.frame = NSRect(x: 14, y: appCardH - 60, width: 90, height: 16)
         appearanceCard.addSubview(colorLabel)
         
         let presets = [
-            (colorPresetOrange, "Orange", 1),
-            (colorPresetCoral, "Coral", 2),
-            (colorPresetBlue, "Blue", 3),
-            (colorPresetGreen, "Green", 4),
-            (colorPresetPurple, "Purple", 5)
+            (colorPresetBlue, "Blue", 1),
+            (colorPresetPurple, "Purple", 2),
+            (colorPresetGreen, "Green", 3),
+            (colorPresetOrange, "Orange", 4),
+            (colorPresetRed, "Red", 5)
         ]
         var pX: CGFloat = 105
         for (btn, title, tag) in presets {
             btn.title = title
             btn.tag = tag
             btn.bezelStyle = .rounded
-            btn.font = NeumorphicTheme.avenirFont(ofSize: 10.5, weight: .medium)
+            btn.font = AppleTheme.font(size: 11, weight: .medium)
             btn.target = self
             btn.action = #selector(colorPresetClicked(_:))
             btn.frame = NSRect(x: pX, y: appCardH - 64, width: 52, height: 24)
@@ -362,24 +408,29 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         customColorWell.frame = NSRect(x: pX + 4, y: appCardH - 64, width: 66, height: 24)
         customColorWell.target = self
         customColorWell.action = #selector(customColorWellChanged(_:))
+        customColorWell.isContinuous = true
+        if #available(macOS 13.0, *) {
+            customColorWell.colorWellStyle = .expanded
+        }
+        customColorWell.color = AppleTheme.primary
         appearanceCard.addSubview(customColorWell)
         
         // Time Font row
         let timeLabel = NSTextField(labelWithString: "Time Font:")
-        timeLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        timeLabel.textColor = NeumorphicTheme.textPrimary
+        timeLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        timeLabel.textColor = AppleTheme.label
         timeLabel.frame = NSRect(x: 14, y: appCardH - 102, width: 90, height: 16)
         appearanceCard.addSubview(timeLabel)
         
         timeFontPopup.frame = NSRect(x: 105, y: appCardH - 106, width: 230, height: 24)
         timeFontPopup.removeAllItems()
         timeFontPopup.addItems(withTitles: [
-            "Alien League Condensed",
-            "Alien League Regular",
+            "SF Pro Monospaced Digits (Default)",
+            "SF Pro Rounded",
+            "SF Pro Regular",
+            "SF Mono",
             "Futura Condensed Light",
-            "SF Pro Rounded Light",
-            "Monospaced Digit",
-            "System Ultra Light"
+            "Alien League"
         ])
         timeFontPopup.target = self
         timeFontPopup.action = #selector(timeFontChanged(_:))
@@ -387,19 +438,19 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         // App Font row
         let appFontLabel = NSTextField(labelWithString: "App Font:")
-        appFontLabel.font = NeumorphicTheme.avenirFont(ofSize: 11, weight: .medium)
-        appFontLabel.textColor = NeumorphicTheme.textPrimary
+        appFontLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        appFontLabel.textColor = AppleTheme.label
         appFontLabel.frame = NSRect(x: 14, y: appCardH - 144, width: 90, height: 16)
         appearanceCard.addSubview(appFontLabel)
         
         appFontPopup.frame = NSRect(x: 105, y: appCardH - 148, width: 230, height: 24)
         appFontPopup.removeAllItems()
         appFontPopup.addItems(withTitles: [
-            "Avenir (Default)",
+            "SF Pro (System Default)",
             "SF Pro Rounded",
-            "System Default",
-            "Monospaced",
-            "Serif"
+            "SF Mono",
+            "Avenir",
+            "System Serif"
         ])
         appFontPopup.target = self
         appFontPopup.action = #selector(appFontChanged(_:))
@@ -408,28 +459,46 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         currentY += appCardH + 14
         
         // CARD 4: System & Menu Bar Integration
-        let sysCardH: CGFloat = 160
+        let sysCardH: CGFloat = 205
         let sysCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: sysCardH))
         container.addSubview(sysCard)
         sectionCards.append(sysCard)
         
         let sysTitle = NSTextField(labelWithString: "System & Menu Bar Integration")
-        sysTitle.font = NeumorphicTheme.avenirFont(ofSize: 12, weight: .semibold)
-        sysTitle.textColor = NeumorphicTheme.accentColor
+        sysTitle.font = AppleTheme.font(size: 13, weight: .semibold)
+        sysTitle.textColor = AppleTheme.primary
         sysTitle.frame = NSRect(x: 14, y: sysCardH - 30, width: 350, height: 16)
         sysCard.addSubview(sysTitle)
+        self.sysTitleLabel = sysTitle
         
-        menuBarTitleCheckbox.frame = NSRect(x: 14, y: sysCardH - 60, width: 420, height: 18)
+        menuBarTitleCheckbox.frame = NSRect(x: 14, y: sysCardH - 58, width: 420, height: 18)
         menuBarTitleCheckbox.target = self
         menuBarTitleCheckbox.action = #selector(menuBarTitleCheckboxChanged(_:))
         sysCard.addSubview(menuBarTitleCheckbox)
         
-        autoPeekCheckbox.frame = NSRect(x: 14, y: sysCardH - 90, width: 440, height: 18)
+        autoPeekCheckbox.frame = NSRect(x: 14, y: sysCardH - 86, width: 440, height: 18)
         autoPeekCheckbox.target = self
         autoPeekCheckbox.action = #selector(autoPeekCheckboxChanged(_:))
         sysCard.addSubview(autoPeekCheckbox)
         
-        launchAtLoginCheckbox.frame = NSRect(x: 14, y: sysCardH - 120, width: 420, height: 18)
+        let peekLabel = NSTextField(labelWithString: "Auto-Peek Duration:")
+        peekLabel.font = AppleTheme.font(size: 12, weight: .medium)
+        peekLabel.textColor = AppleTheme.secondaryLabel
+        peekLabel.frame = NSRect(x: 34, y: sysCardH - 114, width: 130, height: 16)
+        sysCard.addSubview(peekLabel)
+        
+        peekDurationSlider.frame = NSRect(x: 168, y: sysCardH - 116, width: 226, height: 20)
+        peekDurationSlider.target = self
+        peekDurationSlider.action = #selector(peekDurationSliderChanged(_:))
+        sysCard.addSubview(peekDurationSlider)
+        
+        peekDurationLabel.font = AppleTheme.font(size: 12, weight: .semibold)
+        peekDurationLabel.textColor = AppleTheme.secondaryLabel
+        peekDurationLabel.alignment = .right
+        peekDurationLabel.frame = NSRect(x: 400, y: sysCardH - 116, width: 64, height: 20)
+        sysCard.addSubview(peekDurationLabel)
+        
+        launchAtLoginCheckbox.frame = NSRect(x: 14, y: sysCardH - 152, width: 420, height: 18)
         launchAtLoginCheckbox.target = self
         launchAtLoginCheckbox.action = #selector(launchAtLoginCheckboxChanged(_:))
         sysCard.addSubview(launchAtLoginCheckbox)
@@ -444,9 +513,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private func createCardView(frame: NSRect) -> NSView {
         let card = NSView(frame: frame)
         card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.white.cgColor
-        card.layer?.cornerRadius = 14
-        card.layer?.borderColor = NeumorphicTheme.panelBorderOutline.cgColor
+        card.layer?.backgroundColor = AppleTheme.cardBackground.cgColor
+        card.layer?.cornerRadius = AppleTheme.cornerRadius
+        card.layer?.borderColor = AppleTheme.cardBorder.cgColor
         card.layer?.borderWidth = 0.5
         card.layer?.masksToBounds = true
         return card
@@ -458,6 +527,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         let reach = pillController.scanReach
         widthSlider.doubleValue = Double(reach)
         widthValueLabel.stringValue = "\(Int(reach)) px"
+        
+        let hVal = pillController.scanHeight
+        heightSlider.doubleValue = Double(hVal)
+        heightValueLabel.stringValue = "\(Int(hVal)) px"
+        
+        let delay = pillController.hoverDelay
+        sensitivitySlider.doubleValue = delay
+        sensitivityValueLabel.stringValue = delay <= 0.02 ? "Instant (0.0s)" : String(format: "%.2fs", delay)
         
         let pWidth = pillController.customPanelWidth
         panelWidthSlider.doubleValue = Double(pWidth)
@@ -471,32 +548,46 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         
         menuBarTitleCheckbox.state = menuBarController.showUpcomingInMenuBar ? .on : .off
         autoPeekCheckbox.state = pillController.autoPeekEnabled ? .on : .off
+        
+        let dur = pillController.peekDuration
+        peekDurationSlider.doubleValue = dur
+        peekDurationLabel.stringValue = String(format: "%.1f s", dur)
+        
         launchAtLoginCheckbox.state = LaunchAtLoginHelper.isEnabled ? .on : .off
         
-        customColorWell.color = NeumorphicTheme.accentColor
+        if !isInternalColorChange {
+            customColorWell.color = AppleTheme.primary
+        }
+        updateAccentColors()
         
-        let fontName = UserDefaults.standard.string(forKey: "plantop_time_font_name") ?? UserDefaults.standard.string(forKey: "songtop_time_font_name") ?? "AlienLeagueCondensed"
-        if fontName == "AlienLeagueCondensed" {
-            timeFontPopup.selectItem(withTitle: "Alien League Condensed")
-        } else if fontName == "AlienLeague" {
-            timeFontPopup.selectItem(withTitle: "Alien League Regular")
-        } else if fontName == "Futura-CondensedLight" {
+        let fontName = UserDefaults.standard.string(forKey: "plantop_time_font_name") ?? UserDefaults.standard.string(forKey: "songtop_time_font_name") ?? "SFPro"
+        if fontName == "SFPro" || fontName == "MonospacedDigit" {
+            timeFontPopup.selectItem(withTitle: "SF Pro Monospaced Digits (Default)")
+        } else if fontName.contains("Rounded") {
+            timeFontPopup.selectItem(withTitle: "SF Pro Rounded")
+        } else if fontName.contains("Mono") {
+            timeFontPopup.selectItem(withTitle: "SF Mono")
+        } else if fontName.contains("Futura") {
             timeFontPopup.selectItem(withTitle: "Futura Condensed Light")
-        } else if fontName.contains("SFPro") {
-            timeFontPopup.selectItem(withTitle: "SF Pro Rounded Light")
+        } else if fontName.contains("Alien") {
+            timeFontPopup.selectItem(withTitle: "Alien League")
         } else {
-            timeFontPopup.selectItem(withTitle: "Alien League Condensed")
+            timeFontPopup.selectItem(withTitle: "SF Pro Monospaced Digits (Default)")
         }
         
-        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "Rounded"
-        if family == "System" {
-            appFontPopup.selectItem(withTitle: "System Default")
-        } else if family == "Monospaced" {
-            appFontPopup.selectItem(withTitle: "Monospaced")
+        let family = UserDefaults.standard.string(forKey: "plantop_app_font_family") ?? UserDefaults.standard.string(forKey: "songtop_app_font_family") ?? "System"
+        if family == "System" || family == "SFPro" {
+            appFontPopup.selectItem(withTitle: "SF Pro (System Default)")
+        } else if family == "Rounded" {
+            appFontPopup.selectItem(withTitle: "SF Pro Rounded")
+        } else if family == "Monospaced" || family == "Mono" {
+            appFontPopup.selectItem(withTitle: "SF Mono")
+        } else if family == "Avenir" {
+            appFontPopup.selectItem(withTitle: "Avenir")
         } else if family == "Serif" {
-            appFontPopup.selectItem(withTitle: "Serif")
+            appFontPopup.selectItem(withTitle: "System Serif")
         } else {
-            appFontPopup.selectItem(withTitle: "SF Pro Rounded (Default)")
+            appFontPopup.selectItem(withTitle: "SF Pro (System Default)")
         }
         
         updateCalendarStatusUI()
@@ -545,6 +636,24 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
     }
     
+    @objc private func heightSliderChanged(_ sender: NSSlider) {
+        pillController.scanHeight = CGFloat(sender.doubleValue)
+        heightValueLabel.stringValue = "\(Int(sender.doubleValue)) px"
+        if pillController.isGuidePinned {
+            pillController.updateGuidePosition()
+        }
+    }
+    
+    @objc private func sensitivitySliderChanged(_ sender: NSSlider) {
+        let delay = sender.doubleValue
+        pillController.hoverDelay = delay
+        if delay <= 0.02 {
+            sensitivityValueLabel.stringValue = "Instant (0.0s)"
+        } else {
+            sensitivityValueLabel.stringValue = String(format: "%.2fs", delay)
+        }
+    }
+    
     @objc private func panelWidthSliderChanged(_ sender: NSSlider) {
         pillController.customPanelWidth = CGFloat(sender.doubleValue)
         panelWidthValueLabel.stringValue = "\(Int(sender.doubleValue)) px"
@@ -588,41 +697,65 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
     }
     
+    private func updateAccentColors() {
+        let p = AppleTheme.primary
+        headerIconView?.contentTintColor = p
+        calTitleLabel?.textColor = p
+        panelTitleLabel?.textColor = p
+        appearanceTitleLabel?.textColor = p
+        sysTitleLabel?.textColor = p
+    }
+    
     @objc private func colorPresetClicked(_ sender: NSButton) {
         let hex: String
         switch sender.tag {
-        case 1: hex = "#FF700D" // Vibrant Orange
-        case 2: hex = "#FF6B6B" // Coral
-        case 3: hex = "#2563EB" // Blue
-        case 4: hex = "#059669" // Green
-        case 5: hex = "#7C3AED" // Purple
-        default: hex = "#FF700D"
+        case 1: hex = "#007AFF" // System Blue
+        case 2: hex = "#AF52DE" // System Purple
+        case 3: hex = "#34C759" // System Green
+        case 4: hex = "#FF9500" // System Orange
+        case 5: hex = "#FF3B30" // System Red
+        default: hex = "#007AFF"
         }
         UserDefaults.standard.set(hex, forKey: "plantop_accent_color_hex")
         UserDefaults.standard.set(hex, forKey: "songtop_accent_color_hex")
-        customColorWell.color = NeumorphicTheme.accentColor
+        UserDefaults.standard.synchronize()
+        isInternalColorChange = true
+        customColorWell.color = AppleTheme.primary
+        NSColorPanel.shared.color = AppleTheme.primary
+        updateAccentColors()
         NotificationCenter.default.post(name: .planTopSettingsChanged, object: nil)
+        isInternalColorChange = false
     }
     
     @objc private func customColorWellChanged(_ sender: NSColorWell) {
-        let hex = NeumorphicTheme.hexString(from: sender.color)
+        guard !isInternalColorChange else { return }
+        let selectedColor = sender.color
+        let hex = AppleTheme.hexString(from: selectedColor)
         UserDefaults.standard.set(hex, forKey: "plantop_accent_color_hex")
         UserDefaults.standard.set(hex, forKey: "songtop_accent_color_hex")
+        UserDefaults.standard.synchronize()
+        isInternalColorChange = true
+        NSColorPanel.shared.color = selectedColor
+        updateAccentColors()
         NotificationCenter.default.post(name: .planTopSettingsChanged, object: nil)
+        isInternalColorChange = false
     }
     
     @objc private func timeFontChanged(_ sender: NSPopUpButton) {
         guard let title = sender.selectedItem?.title else { return }
         let fontName: String
         switch title {
-        case "Alien League Condensed": fontName = "AlienLeagueCondensed"
-        case "Alien League Regular": fontName = "AlienLeague"
+        case "SF Pro Monospaced Digits (Default)": fontName = "SFPro"
+        case "SF Pro Rounded": fontName = "SFProRounded"
+        case "SF Pro Regular": fontName = "SFProRegular"
+        case "SF Mono": fontName = "SFMono"
         case "Futura Condensed Light": fontName = "Futura-CondensedLight"
-        case "SF Pro Rounded Light": fontName = "SFProRounded-Light"
-        default: fontName = "AlienLeagueCondensed"
+        case "Alien League": fontName = "AlienLeagueCondensed"
+        default: fontName = "SFPro"
         }
         UserDefaults.standard.set(fontName, forKey: "plantop_time_font_name")
         UserDefaults.standard.set(fontName, forKey: "songtop_time_font_name")
+        UserDefaults.standard.synchronize()
         NotificationCenter.default.post(name: .planTopSettingsChanged, object: nil)
     }
     
@@ -630,13 +763,16 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         guard let title = sender.selectedItem?.title else { return }
         let family: String
         switch title {
-        case "System Default": family = "System"
-        case "Monospaced": family = "Monospaced"
-        case "Serif": family = "Serif"
-        default: family = "Rounded"
+        case "SF Pro (System Default)": family = "System"
+        case "SF Pro Rounded": family = "Rounded"
+        case "SF Mono": family = "Monospaced"
+        case "Avenir": family = "Avenir"
+        case "System Serif": family = "Serif"
+        default: family = "System"
         }
         UserDefaults.standard.set(family, forKey: "plantop_app_font_family")
         UserDefaults.standard.set(family, forKey: "songtop_app_font_family")
+        UserDefaults.standard.synchronize()
         NotificationCenter.default.post(name: .planTopSettingsChanged, object: nil)
     }
     
@@ -646,6 +782,12 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     
     @objc private func autoPeekCheckboxChanged(_ sender: NSButton) {
         pillController.autoPeekEnabled = (sender.state == .on)
+    }
+    
+    @objc private func peekDurationSliderChanged(_ sender: NSSlider) {
+        let val = sender.doubleValue
+        pillController.peekDuration = val
+        peekDurationLabel.stringValue = String(format: "%.1f s", val)
     }
     
     @objc private func launchAtLoginCheckboxChanged(_ sender: NSButton) {

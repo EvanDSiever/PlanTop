@@ -42,7 +42,7 @@ public final class LaunchAtLoginHelper {
         return FileManager.default.fileExists(atPath: launchAgentPlistURL.path)
     }
     
-    private static func configureLaunchAgent(enabled: Bool) {
+    public static func configureLaunchAgent(enabled: Bool) {
         let fileManager = FileManager.default
         let plistURL = launchAgentPlistURL
         
@@ -50,7 +50,24 @@ public final class LaunchAtLoginHelper {
             let dir = plistURL.deletingLastPathComponent()
             try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
             
-            let execPath = Bundle.main.executablePath ?? "/Applications/PlanTop.app/Contents/MacOS/PlanTop"
+            var execPath = Bundle.main.executablePath ?? ""
+            if execPath.isEmpty || !fileManager.fileExists(atPath: execPath) {
+                let candidatePaths = [
+                    fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Documents/GitHub Clones/PlanTop/PlanTop.app/Contents/MacOS/PlanTop").path,
+                    fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Documents/GitHub Clones/SongTop/PlanTop.app/Contents/MacOS/PlanTop").path,
+                    "/Applications/PlanTop.app/Contents/MacOS/PlanTop"
+                ]
+                for path in candidatePaths {
+                    if fileManager.fileExists(atPath: path) {
+                        execPath = path
+                        break
+                    }
+                }
+            }
+            if execPath.isEmpty {
+                execPath = "/Applications/PlanTop.app/Contents/MacOS/PlanTop"
+            }
+            
             let plist = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
