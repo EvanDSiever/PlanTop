@@ -1070,6 +1070,14 @@ public final class CalendarPanelView: NSView {
     private let grantAccessButton = NeumorphicDynamicButton(frame: .zero)
     private let openSettingsButton = NeumorphicDynamicButton(frame: .zero)
     
+    // Undo Toast HUD
+    private let undoToastView = NeumorphicDepressedCardView()
+    private let undoToastIcon = NSImageView()
+    private let undoToastLabel = NSTextField(labelWithString: "")
+    private let undoToastButton = NeumorphicDynamicButton(frame: .zero)
+    private let undoToastCloseBtn = NSButton()
+    private var undoToastDismissTimer: Timer?
+    
     public var expandedEventId: String? = nil
     public var onDragStateChanged: ((Bool) -> Void)?
     private var events: [CalendarEvent] = []
@@ -1106,6 +1114,7 @@ public final class CalendarPanelView: NSView {
         NotificationCenter.default.removeObserver(self)
         secondTickerTimer?.invalidate()
         autoScrollTimer?.invalidate()
+        undoToastDismissTimer?.invalidate()
     }
     
     private func registerObservers() {
@@ -1201,6 +1210,9 @@ public final class CalendarPanelView: NSView {
         setupPermissionView()
         addSubview(permissionContainer)
         permissionContainer.isHidden = true
+        
+        // 6. Undo Toast HUD
+        setupUndoToastView()
     }
     
     private func styleTabButton(_ btn: NeumorphicTabButton, title: String) {
@@ -1527,8 +1539,8 @@ public final class CalendarPanelView: NSView {
     }
     
     private func handleRemoveEvent(card: CalendarEventCardView) {
-        let eventId = card.event.id
-        GoogleCalendarService.shared.dismissEvent(id: eventId)
+        let event = card.event
+        GoogleCalendarService.shared.dismissEvent(event)
         
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.35
@@ -1538,7 +1550,7 @@ public final class CalendarPanelView: NSView {
         }, completionHandler: { [weak self] in
             guard let self = self else { return }
             card.removeFromSuperview()
-            self.events.removeAll(where: { $0.id == eventId })
+            self.events.removeAll(where: { $0.id == event.id })
             self.cardViews.removeAll(where: { $0 == card })
             
             if self.events.isEmpty {
@@ -1547,6 +1559,8 @@ public final class CalendarPanelView: NSView {
                 self.updateCardStackPositions(animated: true)
                 self.onHeightChanged?()
             }
+            
+            self.showUndoToast(for: event.title)
         })
     }
     
@@ -1890,6 +1904,8 @@ public final class CalendarPanelView: NSView {
             
             updateCardStackPositions(animated: false)
         }
+        
+        layoutUndoToast()
     }
     
     @objc private func handleScrollViewBoundsChanged(_ notification: Notification) {
@@ -1989,5 +2005,165 @@ public final class CalendarPanelView: NSView {
     
     private func updateScrollMask() {
         scrollView.layer?.mask = nil
+    }
+    
+    // MARK: - Undo Toast HUD
+    private func setupUndoToastView() {
+        undoToastView.cornerRadiusValue = 18
+        undoToastView.surfaceColor = NSColor(red: 0.12, green: 0.12, blue: 0.15, alpha: 0.95)
+        undoToastView.outlineColor = AppleTheme.primary.withAlphaComponent(0.45)
+        undoToastView.outlineWidth = 1.0
+        undoToastView.wantsLayer = true
+        undoToastView.layer?.zPosition = 5000
+        undoToastView.alphaValue = 0.0
+        undoToastView.isHidden = true
+        
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold)
+        undoToastIcon.image = NSImage(systemSymbolName: "trash.fill", accessibilityDescription: "Deleted")?.withSymbolConfiguration(iconConfig)
+        undoToastIcon.contentTintColor = AppleTheme.danger
+        undoToastView.addSubview(undoToastIcon)
+        
+        undoToastLabel.isBezeled = false
+        undoToastLabel.drawsBackground = false
+        undoToastLabel.isEditable = false
+        undoToastLabel.isSelectable = false
+        undoToastLabel.font = AppleTheme.font(size: 12.0, weight: .medium)
+        undoToastLabel.textColor = AppleTheme.label
+        undoToastLabel.lineBreakMode = .byTruncatingTail
+        undoToastView.addSubview(undoToastLabel)
+        
+        undoToastButton.cornerRadiusValue = 11
+        undoToastButton.unpressedBackgroundColor = AppleTheme.primary.withAlphaComponent(0.18)
+        undoToastButton.pressedBackgroundColor = AppleTheme.primary.withAlphaComponent(0.35)
+        undoToastButton.unpressedBorderColor = AppleTheme.primary.withAlphaComponent(0.40)
+        undoToastButton.unpressedBorderWidth = 0.5
+        let undoStyle = NSMutableParagraphStyle()
+        undoStyle.alignment = .center
+        undoToastButton.attributedTitle = NSAttributedString(
+            string: "Undo",
+            attributes: [
+                .font: AppleTheme.font(size: 11.5, weight: .bold),
+                .foregroundColor: AppleTheme.primary,
+                .paragraphStyle: undoStyle
+            ]
+        )
+        undoToastButton.target = self
+        undoToastButton.action = #selector(handleUndoClicked)
+        undoToastView.addSubview(undoToastButton)
+        
+        undoToastCloseBtn.isBordered = false
+        undoToastCloseBtn.setButtonType(.momentaryChange)
+        let closeConfig = NSImage.SymbolConfiguration(pointSize: 9.0, weight: .medium)
+        undoToastCloseBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Dismiss")?.withSymbolConfiguration(closeConfig)
+        undoToastCloseBtn.contentTintColor = AppleTheme.tertiaryLabel
+        undoToastCloseBtn.target = self
+        undoToastCloseBtn.action = #selector(hideUndoToast)
+        undoToastView.addSubview(undoToastCloseBtn)
+        
+        addSubview(undoToastView)
+    }
+    
+    private func layoutUndoToast() {
+        guard !undoToastView.isHidden else { return }
+        let w = bounds.width
+        let h = bounds.height
+        let toastH: CGFloat = 36
+        let toastW = min(360, max(240, w - 28))
+        let toastX = (w - toastW) / 2
+        let toastY = h - toastH - 12
+        undoToastView.frame = NSRect(x: toastX, y: toastY, width: toastW, height: toastH)
+        
+        undoToastIcon.frame = NSRect(x: 10, y: 10, width: 16, height: 16)
+        
+        let closeBtnW: CGFloat = 18
+        undoToastCloseBtn.frame = NSRect(x: toastW - closeBtnW - 8, y: 9, width: closeBtnW, height: 18)
+        
+        let undoBtnW: CGFloat = 52
+        undoToastButton.frame = NSRect(x: toastW - closeBtnW - undoBtnW - 10, y: 6, width: undoBtnW, height: 24)
+        
+        let labelX: CGFloat = 32
+        let labelW = max(50, toastW - labelX - undoBtnW - closeBtnW - 16)
+        undoToastLabel.frame = NSRect(x: labelX, y: 8, width: labelW, height: 20)
+    }
+    
+    public func showUndoToast(for title: String) {
+        undoToastDismissTimer?.invalidate()
+        
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold)
+        undoToastIcon.image = NSImage(systemSymbolName: "trash.fill", accessibilityDescription: "Deleted")?.withSymbolConfiguration(iconConfig)
+        undoToastIcon.contentTintColor = AppleTheme.danger
+        
+        undoToastLabel.stringValue = "Deleted \"\(title)\""
+        undoToastButton.isHidden = false
+        
+        let w = bounds.width
+        let h = bounds.height
+        let toastH: CGFloat = 36
+        let toastW = min(360, max(240, w - 28))
+        let toastX = (w - toastW) / 2
+        let targetY = h - toastH - 12
+        let startY = h - toastH + 12
+        
+        undoToastView.frame = NSRect(x: toastX, y: startY, width: toastW, height: toastH)
+        layoutUndoToast()
+        undoToastView.isHidden = false
+        undoToastView.alphaValue = 0.0
+        
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.28
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            undoToastView.animator().frame.origin.y = targetY
+            undoToastView.animator().alphaValue = 1.0
+        }
+        
+        undoToastDismissTimer = Timer.scheduledTimer(withTimeInterval: 6.0, repeats: false) { [weak self] _ in
+            self?.hideUndoToast()
+        }
+    }
+    
+    @objc public func hideUndoToast() {
+        undoToastDismissTimer?.invalidate()
+        undoToastDismissTimer = nil
+        
+        let currentOrigin = undoToastView.frame.origin
+        let destY = currentOrigin.y + 12
+        
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            self.undoToastView.animator().frame.origin.y = destY
+            self.undoToastView.animator().alphaValue = 0.0
+        }, completionHandler: { [weak self] in
+            self?.undoToastView.isHidden = true
+        })
+    }
+    
+    @objc public func handleUndoClicked() {
+        undoToastDismissTimer?.invalidate()
+        onUserInteraction?()
+        
+        if let restoredRecord = GoogleCalendarService.shared.undoLastDismissedEvent() {
+            let iconConfig = NSImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold)
+            undoToastIcon.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Restored")?.withSymbolConfiguration(iconConfig)
+            undoToastIcon.contentTintColor = AppleTheme.primary
+            undoToastLabel.stringValue = "Restored \"\(restoredRecord.title)\""
+            undoToastButton.isHidden = true
+            
+            reloadFromService()
+            
+            undoToastDismissTimer = Timer.scheduledTimer(withTimeInterval: 2.2, repeats: false) { [weak self] _ in
+                self?.hideUndoToast()
+            }
+        } else {
+            hideUndoToast()
+        }
+    }
+    
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" && !event.modifierFlags.contains(.shift) {
+            handleUndoClicked()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }

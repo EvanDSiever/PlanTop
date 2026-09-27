@@ -46,6 +46,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     // Daily Planner & Google Calendar Controls
     private let calendarEnabledCheckbox = NSButton(checkboxWithTitle: "Enable Daily Planner side-panel", target: nil, action: nil)
     private let classIdentifiersField = NSTextField()
+    private let dismissedEventsLabel = NSTextField(labelWithString: "No dismissed events")
+    private let calendarRestoreButton = NSButton(title: "Restore Dismissed Events", target: nil, action: nil)
     private let calendarStatusLabel = NSTextField(labelWithString: "Status: Checking...")
     private let calendarRefreshButton = NSButton(title: "Sync Now", target: nil, action: nil)
     private let calendarAccountsButton = NSButton(title: "System Calendar Accounts", target: nil, action: nil)
@@ -102,6 +104,12 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             self,
             selector: #selector(onCalendarStatusUpdated),
             name: .planTopCalendarUpdated,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onCalendarStatusUpdated),
+            name: .songTopCalendarUpdated,
             object: nil
         )
     }
@@ -198,7 +206,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         currentY += 60
         
         // CARD 1: Google Calendar & Daily Planner Integration
-        let calCardH: CGFloat = 260
+        let calCardH: CGFloat = 300
         let calCard = createCardView(frame: NSRect(x: 20, y: currentY, width: 480, height: calCardH))
         container.addSubview(calCard)
         sectionCards.append(calCard)
@@ -240,6 +248,18 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         calendarICalField.target = self
         calendarICalField.action = #selector(calendarICalChanged(_:))
         calCard.addSubview(calendarICalField)
+        
+        // Dismissed events row
+        dismissedEventsLabel.font = AppleTheme.footnoteFont
+        dismissedEventsLabel.textColor = AppleTheme.secondaryLabel
+        dismissedEventsLabel.frame = NSRect(x: 14, y: 56, width: 230, height: 20)
+        calCard.addSubview(dismissedEventsLabel)
+        
+        calendarRestoreButton.bezelStyle = .rounded
+        calendarRestoreButton.target = self
+        calendarRestoreButton.action = #selector(restoreDismissedEventsClicked)
+        calendarRestoreButton.frame = NSRect(x: 250, y: 52, width: 217, height: 28)
+        calCard.addSubview(calendarRestoreButton)
         
         // Sync status and actions
         calendarStatusLabel.font = AppleTheme.footnoteFont
@@ -620,6 +640,17 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .error(let msg):
             calendarStatusLabel.stringValue = "Status: \(msg)"
         }
+        
+        let dismissedCount = GoogleCalendarService.shared.dismissedEventIds.count
+        if dismissedCount > 0 {
+            dismissedEventsLabel.stringValue = "Dismissed: \(dismissedCount) hidden event\(dismissedCount == 1 ? "" : "s")"
+            calendarRestoreButton.isEnabled = true
+            calendarRestoreButton.title = "Restore All Dismissed (\(dismissedCount))"
+        } else {
+            dismissedEventsLabel.stringValue = "No dismissed events"
+            calendarRestoreButton.isEnabled = false
+            calendarRestoreButton.title = "Restore Dismissed Events"
+        }
     }
     
     @objc private func modeSegmentChanged(_ sender: NSSegmentedControl) {
@@ -695,6 +726,11 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         if let url = URL(string: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension") {
             NSWorkspace.shared.open(url)
         }
+    }
+    
+    @objc private func restoreDismissedEventsClicked() {
+        GoogleCalendarService.shared.restoreDismissedEvents()
+        updateCalendarStatusUI()
     }
     
     private func updateAccentColors() {

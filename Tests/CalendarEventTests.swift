@@ -557,6 +557,72 @@ struct CalendarEventTestsRunner {
             assertTrue(fallbackURL.contains("Doctor%20Appointment") || fallbackURL.contains("Doctor"), "Fallback URL references event")
         }
 
+        // Test 21: Undo Event Deletion & Dismissed History
+        do {
+            let service = GoogleCalendarService.shared
+            service.restoreDismissedEvents()
+            assertEqual(service.dismissedEventIds.count, 0, "Initially 0 dismissed events")
+            assertEqual(service.dismissedHistory.count, 0, "Initially 0 dismissed history records")
+
+            let roboticsReport = CalendarEvent(
+                id: "test-robotics-report-id",
+                title: "REPORT Robotics",
+                startDate: now.addingTimeInterval(3600),
+                endDate: now.addingTimeInterval(7200)
+            )
+            let sequentialsReport = CalendarEvent(
+                id: "test-sequentials-report-id",
+                title: "REPORT Sequentials",
+                startDate: now.addingTimeInterval(7200),
+                endDate: now.addingTimeInterval(10800)
+            )
+
+            // Setup test events
+            service.setTestEvents(classes: [], today: [], tomorrow: [], tasks: [roboticsReport, sequentialsReport])
+            assertEqual(service.tasksEvents.count, 2, "2 tasks present before dismissal")
+
+            // Dismiss robotics report
+            service.dismissEvent(roboticsReport)
+            assertEqual(service.tasksEvents.count, 1, "1 task remaining after dismissing robotics")
+            assertEqual(service.tasksEvents.first?.title, "REPORT Sequentials", "Sequentials report remains")
+            assertTrue(service.dismissedEventIds.contains(roboticsReport.id), "Dismissed IDs contains robotics ID")
+            assertEqual(service.dismissedHistory.count, 1, "Dismissed history has 1 record")
+            assertEqual(service.dismissedHistory.first?.title, "REPORT Robotics", "Record title is REPORT Robotics")
+
+            // Dismiss sequentials report
+            service.dismissEvent(sequentialsReport)
+            assertEqual(service.tasksEvents.count, 0, "0 tasks remaining after dismissing both")
+            assertEqual(service.dismissedHistory.count, 2, "Dismissed history has 2 records")
+
+            // Undo last dismissal (should restore Sequentials Report)
+            let undone1 = service.undoLastDismissedEvent()
+            assertEqual(undone1?.title, "REPORT Sequentials", "Undone event is Sequentials Report")
+            assertTrue(!service.dismissedEventIds.contains(sequentialsReport.id), "Sequentials ID removed from dismissed set")
+            assertEqual(service.dismissedHistory.count, 1, "Dismissed history has 1 record left")
+
+            // Undo next dismissal (should restore Robotics Report)
+            let undone2 = service.undoLastDismissedEvent()
+            assertEqual(undone2?.title, "REPORT Robotics", "Undone event is Robotics Report")
+            assertTrue(!service.dismissedEventIds.contains(roboticsReport.id), "Robotics ID removed from dismissed set")
+            assertEqual(service.dismissedHistory.count, 0, "Dismissed history is empty")
+
+            // Test recurrence instance / RID removal
+            let recurringInstance = CalendarEvent(
+                id: "google-rec-id:123@google.com/RID=812602800",
+                title: "REPORT Lab Recurrence",
+                startDate: now.addingTimeInterval(3600),
+                endDate: now.addingTimeInterval(7200)
+            )
+            service.dismissEvent(recurringInstance)
+            assertTrue(service.dismissedEventIds.contains(recurringInstance.id), "Recurring instance is dismissed")
+            service.restoreEvent(id: recurringInstance.id)
+            assertTrue(!service.dismissedEventIds.contains(recurringInstance.id), "Recurring instance restored cleanly")
+
+            // Clean up
+            service.restoreDismissedEvents()
+            assertEqual(service.dismissedEventIds.count, 0, "Cleaned up dismissed events")
+        }
+
         print("\n🎉 All PlanTop CalendarEvent tests passed successfully!")
     }
 }

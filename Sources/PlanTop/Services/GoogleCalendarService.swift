@@ -19,6 +19,20 @@ public enum CalendarSyncStatus: Equatable {
     case error(String)
 }
 
+public struct DismissedEventRecord: Codable, Equatable {
+    public let id: String
+    public let title: String
+    public let timestamp: Date
+    public let externalIdentifier: String?
+    
+    public init(id: String, title: String, timestamp: Date = Date(), externalIdentifier: String? = nil) {
+        self.id = id
+        self.title = title
+        self.timestamp = timestamp
+        self.externalIdentifier = externalIdentifier
+    }
+}
+
 public final class GoogleCalendarService: ObservableObject {
     public static let shared = GoogleCalendarService()
     
@@ -28,6 +42,7 @@ public final class GoogleCalendarService: ObservableObject {
     @Published public private(set) var todaysEvents: [CalendarEvent] = []
     @Published public private(set) var tomorrowsEvents: [CalendarEvent] = []
     @Published public private(set) var dismissedEventIds: Set<String> = []
+    @Published public private(set) var dismissedHistory: [DismissedEventRecord] = []
     @Published public private(set) var syncStatus: CalendarSyncStatus = .idle
     @Published public private(set) var lastSyncDate: Date?
     
@@ -97,6 +112,10 @@ public final class GoogleCalendarService: ObservableObject {
         
         if let dismissed = UserDefaults.standard.stringArray(forKey: "plantop_dismissed_event_ids") {
             self.dismissedEventIds = Set(dismissed)
+        }
+        if let data = UserDefaults.standard.data(forKey: "plantop_dismissed_history"),
+           let history = try? JSONDecoder().decode([DismissedEventRecord].self, from: data) {
+            self.dismissedHistory = history
         }
         self.customOrderClasses = UserDefaults.standard.stringArray(forKey: "plantop_order_classes") ?? []
         self.customOrderTasks = UserDefaults.standard.stringArray(forKey: "plantop_order_tasks")
@@ -224,20 +243,75 @@ public final class GoogleCalendarService: ObservableObject {
         }
     }
     
-    public func dismissEvent(id: String) {
-        dismissedEventIds.insert(id)
+    private func saveDismissedState() {
         UserDefaults.standard.set(Array(dismissedEventIds), forKey: "plantop_dismissed_event_ids")
-        classesEvents.removeAll { $0.id == id }
-        tasksEvents.removeAll { $0.id == id }
-        todaysEvents.removeAll { $0.id == id }
-        tomorrowsEvents.removeAll { $0.id == id }
+        if let data = try? JSONEncoder().encode(dismissedHistory) {
+            UserDefaults.standard.set(data, forKey: "plantop_dismissed_history")
+        }
+    }
+    
+    public func dismissEvent(_ event: CalendarEvent) {
+        dismissEvent(id: event.id, title: event.title, externalIdentifier: event.externalIdentifier)
+    }
+    
+    public func dismissEvent(id: String, title: String? = nil, externalIdentifier: String? = nil) {
+        dismissedEventIds.insert(id)
+        if let ext = externalIdentifier, !ext.isEmpty {
+            dismissedEventIds.insert(ext)
+        }
+        let eventTitle = title ?? (eventStore.event(withIdentifier: id)?.title ?? "Event")
+        let record = DismissedEventRecord(id: id, title: eventTitle, timestamp: Date(), externalIdentifier: externalIdentifier)
+        dismissedHistory.removeAll { $0.id == id }
+        dismissedHistory.append(record)
+        
+        saveDismissedState()
+        
+        classesEvents.removeAll { $0.id == id || (externalIdentifier != nil && $0.externalIdentifier == externalIdentifier) }
+        tasksEvents.removeAll { $0.id == id || (externalIdentifier != nil && $0.externalIdentifier == externalIdentifier) }
+        todaysEvents.removeAll { $0.id == id || (externalIdentifier != nil && $0.externalIdentifier == externalIdentifier) }
+        tomorrowsEvents.removeAll { $0.id == id || (externalIdentifier != nil && $0.externalIdentifier == externalIdentifier) }
         NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
+        NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
+    }
+    
+    @discardableResult
+    public func undoLastDismissedEvent() -> DismissedEventRecord? {
+        guard let lastRecord = dismissedHistory.popLast() else {
+            if let firstId = dismissedEventIds.first {
+                restoreEvent(id: firstId)
+            }
+            return nil
+        }
+        restoreEvent(id: lastRecord.id, externalIdentifier: lastRecord.externalIdentifier)
+        return lastRecord
+    }
+    
+    public func restoreEvent(id: String, externalIdentifier: String? = nil) {
+        let base = id.components(separatedBy: "/RID=").first ?? id
+        dismissedEventIds = dismissedEventIds.filter { existing in
+            if existing == id || existing == base || existing.hasPrefix(base + "/RID=") {
+                return false
+            }
+            if let ext = externalIdentifier, !ext.isEmpty && existing == ext {
+                return false
+            }
+            return true
+        }
+        dismissedHistory.removeAll { $0.id == id || $0.id == base }
+        saveDismissedState()
+        refresh()
+        NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
+        NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
     }
     
     public func restoreDismissedEvents() {
         dismissedEventIds.removeAll()
+        dismissedHistory.removeAll()
         UserDefaults.standard.removeObject(forKey: "plantop_dismissed_event_ids")
+        UserDefaults.standard.removeObject(forKey: "plantop_dismissed_history")
         refresh()
+        NotificationCenter.default.post(name: .planTopCalendarUpdated, object: nil)
+        NotificationCenter.default.post(name: .songTopCalendarUpdated, object: nil)
     }
     
     public func saveCustomOrder(eventIds: [String], forMode mode: CalendarDayMode) {
@@ -426,7 +500,6 @@ public final class GoogleCalendarService: ObservableObject {
             let tasksPred = self.eventStore.predicateForEvents(withStart: startOfWeek, end: endOfWeek, calendars: calendarsToQuery)
             let ekTasks = self.eventStore.events(matching: tasksPred)
             let mappedTasks = self.mapEvents(ekTasks)
-            
             // Separate into dedicated category lists (excluding dismissed events, strictly within current week)
             let rawTasks = mappedTasks.filter {
                 $0.isReportOrHomework &&
